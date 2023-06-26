@@ -34,6 +34,8 @@ Current state of this repository: very early POC/Demo implementation
     ```
 4. Open localhost:8000 in a browser
 
+![graphql](https://github.com/OlofBlomqvist/marlowe_indexer/blob/main/graphql.png)
+
 # Planned features
 
 *In no particular order*
