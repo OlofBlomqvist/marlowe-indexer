@@ -50,39 +50,11 @@ pub async fn init_logging(level:&str,enable_otel_tracing:bool) -> Result<()> {
     // todo : switch to generic otel impl
     if enable_otel_tracing {
        
-        // // First, create a OTLP exporter builder. Configure it as you need.
-        // let otlp_exporter = opentelemetry_otlp::new_exporter().tonic();
-        // // Then pass it into pipeline builder
-        // let tracer = opentelemetry_otlp::new_pipeline()
-        //         .tracing()
-        //         .with_exporter(otlp_exporter)
-        //         .install_batch(opentelemetry::runtime::Tokio)?;
-
-        // let tracer = opentelemetry_jaeger::new_collector_pipeline()
-        //     .with_endpoint("http://localhost:14268/api/traces")
-        //     .with_service_name("Marlowe Indexer 11")
-        //     .with_batch_processor_config(opentelemetry::sdk::trace::BatchConfig::default().with_max_queue_size(2048))
-        //     .with_trace_config(
-        //         opentelemetry_sdk::trace::Config::default().with_sampler(opentelemetry_sdk::trace::Sampler::AlwaysOn)
-        //     )
-        //     .with_isahc()
-        //     .install_batch(opentelemetry::runtime::Tokio)?;
-        
-        // let otel_layer = 
-        //     tracing_opentelemetry::OpenTelemetryLayer::default()
-        //     .with_tracer(tracer)
-        //     .with_tracked_inactivity(true);
-
-        // let s = 
-        //     tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt::with(console_subscriber, otel_layer);
-        
-        // tracing::subscriber::set_global_default(s)?;
-        
         let resource = Resource::new(vec![KeyValue::new("service.name", "Marlowe Indexer 11")]);
         let otlp_exporter = opentelemetry_otlp::new_exporter()
             .tonic() // Using tonic for gRPC
-            .with_endpoint("http://localhost:14268/api/traces") // Jaeger collector endpoint
-            .with_protocol(Protocol::HttpBinary) // Assuming Jaeger is using gRPC
+            .with_endpoint("https://127.0.0.1:4317/api/traces") // Jaeger collector endpoint
+            .with_protocol(Protocol::Grpc) // Assuming Jaeger is using gRPC
             .with_timeout(tokio::time::Duration::from_secs(3)); // Set timeout as needed
         
         let tracer = opentelemetry_otlp::new_pipeline()
