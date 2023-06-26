@@ -1,0 +1,5 @@
+[workspace]
+members = [
+  "cardano_chain_sync",
+  "marlowe_indexer",
+]

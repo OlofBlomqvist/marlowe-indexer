@@ -1,0 +1,121 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'cardano_chain_sync'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=cardano_chain_sync"
+                ],
+                "filter": {
+                    "name": "cardano_chain_sync",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'pallas_network'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=pallas_network"
+                ],
+                "filter": {
+                    "name": "pallas_network",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'plexer'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=plexer",
+                    "--package=pallas_network"
+                ],
+                "filter": {
+                    "name": "plexer",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug integration test 'protocols'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--test=protocols",
+                    "--package=pallas_network"
+                ],
+                "filter": {
+                    "name": "protocols",
+                    "kind": "test"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'marlowe_indexer'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=marlowe_indexer",
+                    "--package=marlowe_indexer"
+                ],
+                "filter": {
+                    "name": "marlowe_indexer",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'marlowe_indexer'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=marlowe_indexer",
+                    "--package=marlowe_indexer"
+                ],
+                "filter": {
+                    "name": "marlowe_indexer",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
