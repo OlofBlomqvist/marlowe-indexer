@@ -14,7 +14,9 @@ hex = "0.4.3"
 pallas = "0.18.1"
 pallas-primitives = "0.18.1"
 pallas-traverse = "0.18.1"
-pallas_network = { git = "https://github.com/txpipe/pallas.git", branch = "main", package = "pallas-network" }
+pallas-network = { path = "C:/Users/oblink/Documents/GitHub/pallas/pallas-network" }
+#pallas_network = { git = "https://github.com/txpipe/pallas.git", branch = "main", package = "pallas-network" }
+
 thiserror = "1.0.40"
 tokio = { version ="1.28.0", features = ["full"] }
 tracing = "0.1.37"

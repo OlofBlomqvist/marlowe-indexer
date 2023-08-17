@@ -1,6 +1,6 @@
 use error_stack::{Report, IntoReport};
 use thiserror::Error;
-use tracing::{debug};
+use tracing::debug;
 
 #[derive(Error, Debug)]
 pub enum ConfigurationBuilderError {
