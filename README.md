@@ -9,14 +9,15 @@ Current state of this repository: very early POC/Demo implementation
 
 # What works?
 
-- Sync against cardano node over TCP/IP.
+- Sync against cardano node over TCP/IP, UnixSocket or named pipes.
 - Indexing of contracts using the V1 and V1+Audited Marlowe validators.
 - Basic GraphQL server exposing:
     - All indexed contracts
     - Marlowe State / datum (in json format)
     - Marlowe Redeemer, also in json format
     - Generic info about each tx involved in a contract
-    - Very limited filtering
+    - Limited filtering
+    - Pagination
 
 # How it works
 
