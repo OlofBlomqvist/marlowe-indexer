@@ -40,8 +40,7 @@ Current state of this repository: very early POC/Demo implementation
 
 *In no particular order*
 
-- Sync via unix-sockets
-- Configuration via file and cli args
+- Configuration via file
 - Customization of how to store marlowe data: JSON/CBOR etc
 - Data Persistance (redis,mongodb,file-system,etc?)
 - GraphQL subscriptions (with filtering)

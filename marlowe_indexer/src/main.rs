@@ -15,6 +15,7 @@ use warp::Filter;
 mod worker;
 mod state;
 
+use cardano_chain_sync::pallas_network_ccs as pallas_network;
 
 use async_graphql_warp::GraphQLBadRequest;
 use async_graphql::{http::GraphiQLSource, EmptyMutation, EmptySubscription, Schema};

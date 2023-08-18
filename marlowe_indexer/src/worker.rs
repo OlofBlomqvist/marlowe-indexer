@@ -8,6 +8,8 @@ use pallas_traverse::{MultiEraTx, OriginalHash, MultiEraOutput};
 use tracing::{info, info_span, Instrument, warn, trace};
 use crate::state::{State, SlotId, MarloweTransition, Contract, OutputReference};
 
+use cardano_chain_sync::pallas_network_ccs as pallas_network;
+
 #[derive(Debug)]
 pub struct MarloweSyncWorker{
     state: Arc<tokio::sync::RwLock<State>>,

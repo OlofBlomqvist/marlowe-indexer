@@ -32,9 +32,6 @@ type ContractConnection {
 	A list of nodes.
 	"""
 	nodes: [Contract!]!
-	"""
-	Total result set count
-	"""
 	totalIndexedContracts: Int!
 	totalNumberOfContractsMatchingCurrentFilter: Int!
 	totalNumberOfPagesUsingCurrentFilter: Int!

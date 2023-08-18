@@ -17,6 +17,8 @@ use pallas::ledger::traverse::MultiEraHeader;
 use thiserror::Error;
 use std::time::Instant;
 
+pub use pallas_network as pallas_network_ccs;
+
 pub struct ProgressTracker {
     start_time: Instant,
     total_items: u64,
