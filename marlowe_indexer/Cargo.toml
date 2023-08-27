@@ -12,7 +12,7 @@ tracing-subscriber = { version="0.3.17", features=["env-filter","fmt"] }
 tracing-opentelemetry = "*"
 tokio = { version ="1.28.0", features = ["full"] }
 anyhow = { version ="1.0.71", all_features = true }
-error-stack = "0.3.1"
+error-stack = "0.4.0"
 pallas = "0.18.1"
 pallas-primitives = "0.18.1"
 pallas-traverse = "0.18.1"
