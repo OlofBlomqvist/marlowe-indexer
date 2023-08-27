@@ -44,3 +44,8 @@ clap = "4.3.21"
 structopt = "0.3.26"
 strum_macros = "0.25.2"
 futures-timer = "3.0.2"
+serde = "1.0.183"
+
+
+[features]
+debug = []

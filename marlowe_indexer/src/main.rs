@@ -18,9 +18,8 @@ mod state;
 use cardano_chain_sync::pallas_network_ccs as pallas_network;
 
 use async_graphql_warp::GraphQLBadRequest;
-use async_graphql::{http::GraphiQLSource, EmptyMutation, EmptySubscription, Schema};
+use async_graphql::{http::GraphiQLSource, EmptyMutation, Schema};
 mod graphql;
-mod graphql_tests;
 
 use opentelemetry_otlp::Protocol;
 use opentelemetry_otlp::WithExportConfig;
@@ -102,7 +101,7 @@ async fn graphql_handler(
     info!("Got request from {}",src_ip);
     let schema = graphql::create_schema();
     let schema = 
-        Schema::build(graphql::QueryRoot, EmptyMutation, crate::graphql::SubscriptionRoot)
+        Schema::build(graphql::types::QueryRoot, EmptyMutation, crate::graphql::types::SubscriptionRoot)
             .data(state.clone())
             .data(schema)
             .finish();    
@@ -165,9 +164,11 @@ async fn main() -> Result<()> {
     let ccc = shared_state_arc.clone();
 
     let intersect = 
-        match configuration.magic {
+        match configuration.magic 
+        {
             pallas_network::miniprotocols::PRE_PRODUCTION_MAGIC => 
                 (10847427,hex::decode("4194504ed513bedd432301f17738c8cc8c07eb9f5d58d673316344533fabfc23").unwrap()),
+                //(20652041,hex::decode("bd64380360adae03158b2641e17bd2a0d74e018c3598002a3ada7bb8c4dfc1b4").unwrap()), // much later TEMP TEMP TEMP dont use this, use the one above
             pallas_network::miniprotocols::MAINNET_MAGIC => 
                 (72748995,hex::decode("d86e9f41a81d4e372d9255a07856c46e9026d2eabe847d5404da2bbe5fb7f3c1").unwrap()),
             pallas_network::miniprotocols::PREVIEW_MAGIC => 
@@ -175,7 +176,8 @@ async fn main() -> Result<()> {
             _ => panic!()
         };
 
-    tokio::spawn(async move {
+        
+    let worker_task = tokio::spawn(async move {
         let marlowe_worker = Box::new(MarloweSyncWorker::new(ccc));
         let mut ccs = 
             CardanoChainSync::new(
@@ -191,32 +193,28 @@ async fn main() -> Result<()> {
         let span = info_span!("worker_thread");
         ccs.run().instrument(span).await;
         std::result::Result::<(),String>::Ok(())
+
     });
 
     let cors = warp::cors()
         .allow_any_origin() 
         .allow_methods(vec!["POST", "GET", "OPTIONS"]) 
         .allow_headers(vec!["Content-Type","origin"]); 
-    
+
+    let shared_state_arc_gql_post = shared_state_arc.clone();
+
     let graphql_post = 
         warp::post()
             .and(warp::body::bytes())
             .and(warp::addr::remote())
-            .and(warp::header::headers_cloned())
-            .and_then(move |bytes,remote_addr: Option<std::net::SocketAddr>, headers:HeaderMap| {
-                let shared_state_arc = shared_state_arc.clone();
+            .and_then(move |bytes,remote_addr: Option<std::net::SocketAddr>| {
+                let shared_state_arc = shared_state_arc_gql_post.clone();
                 let source_ip = remote_addr.unwrap().ip();
-                // let headers_map: std::collections::HashMap<String,String>  = headers
-                //     .iter()
-                //     .map(|header| (header.0.as_str().to_owned(), header.1.to_str().unwrap().to_owned()))
-                //     .collect();
                 async move {
-                    
                     graphql_handler(
                         shared_state_arc, 
                         bytes,
-                        source_ip,
-                        //headers_map
+                        source_ip
                     ).await
                 }
             }).with(cors.clone());
@@ -230,7 +228,13 @@ async fn main() -> Result<()> {
     
  
     let routes = async_graphql_warp::graphql_subscription(
-                graphql::create_schema()
+                Schema::build(
+                    graphql::types::QueryRoot, 
+                    EmptyMutation, 
+                    crate::graphql::types::SubscriptionRoot
+                ).data(shared_state_arc.clone())
+                 .data(graphql::create_schema())
+                 .finish()
             ).or(
         graphiql)
         .or(graphql_post)
@@ -248,8 +252,10 @@ async fn main() -> Result<()> {
             ))
         }).with(warp::trace::request());
 
-    _ = tokio::spawn(warp::serve(routes).run(([0, 0, 0, 0], 8000))).await;
-
+    let warp_task = tokio::spawn(warp::serve(routes).run(([0, 0, 0, 0], 8000)));
+    
+    _ = tokio::try_join!(warp_task,worker_task);
+    
     info!("Application stopping.");
 
     opentelemetry::global::shutdown_tracer_provider();

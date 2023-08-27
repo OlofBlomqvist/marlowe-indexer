@@ -1,22 +1,87 @@
 directive @oneOf on INPUT_OBJECT
 
+input AccountOwnerFilter @oneOf {
+	role: StringFilter
+	address: StringFilter
+}
+
 
 type Contract {
 	"""
-	+ slot id of the block in which this contract was initialized
-	+ index of the tx in that block
-	+ index of the output containing the contract inside the tx.
-	... converted to base58.
+	WARNING: This information should not normally be queried as it is rather slow.
+	It can be used to validate the marlowe-rs contract simulation state-machine implementation
+	such that each redeemer is applied to the previous datum, validating the resulting output datum
+	which should always match the actual datum as seen on chain. If at any point these differ,
+	we know there is a bug in marlowe-rs. This property will return null if there are no issues detected.
+	Note that this is only for testing on PREPROD.
+	"""
+	marloweRsTest: String!
+	"""
+	This property will provide a human readable description of the contracts current status.
+	"""
+	description: String!
+	"""
+	true if the contract expects a notification to be made, and we can tell that
+	any notification sent at this time will cause the notification to be true.
+	"""
+	expectedNotificationIsTrue: Boolean
+	"""
+	The datum of the last observed utxo in the contract chain
+	"""
+	datumJson: String
+	"""
+	Script hash of the marlowe payout validator script used for this contract
+	"""
+	payoutValidatorHash: String
+	"""
+	The minimum time at which point this contract will be possible to transition to a possible next stage.
+	"""
+	minTime: Int
+	"""
+	Current contract definition in DSL format
+	"""
+	contractDsl: String
+	"""
+	Current contract definition in JSON format
+	"""
+	contractJson: String
+	"""
+	List of all remaining contract participants.
+	"""
+	remainingParticipants: [String!]!
+	"""
+	List of all known contract participants.
+	"""
+	participants: [String!]!
+	"""
+	JSON serialized representation of the current contract state.
+	"""
+	contractStateJson: String
+	hasTimedOut: Boolean!
+	continuations: JSONObject!
+	"""
+	Available only if the contract is in a state at which it may time out.
+	This will be a negative value if the contract has already timed out.
+	BUG: Generic(\"This contract is not fully initialized. There is an invalid case in a When contract.\"
+	BUG INFO: This happens when there are merkleized cases - bug created in marlowe-rs.
+	"""
+	nextTimeOut: Float
+	"""
+	Base58 encoded version of block_num,tx_num,utxo_index. Used as cursor for marlowe-indexer.
 	"""
 	shortId: String!
 	"""
-	hash id of the tx that initially created this contract instance
+	The hash of the transaction that initiated the contract utxo chain
 	"""
 	id: String!
 	"""
-	All states in the contract, in order of first to last.
+	The marlowe validator hash where the contracts utxo chain lives.
 	"""
-	transitions: [MarloweTransition!]!
+	validatorHash: String!
+	"""
+	All observed states that this contract has been in
+	"""
+	transitions(filter: TransitionFilter): [MarloweTransition!]!
 }
 
 type ContractConnection {
@@ -56,46 +121,72 @@ type ContractEdge {
 	cursor: String!
 }
 
+input ContractsFilter {
+	id: StringFilter
+	"""
+	Custom cursor id used by marlowe-indexer, based on block,tx and utxo position on chain, converted to base58.
+	"""
+	shortId: StringFilter
+	hasIssues: Boolean
+	accountState: LockedAmountFilter
+	isClosed: Boolean
+	meta: StringFilter
+	validatorHash: StringFilter
+	marloweRsStatus: StringFilter
+	"""
+	Filter by number of bound values in current state
+	"""
+	boundValues: NumFilter
+	datum: StringFilter
+}
+
 
 
 
 """
-This represents a single UTXO inside of a transaction which
-changes the state of a Marlowe contract on chain.
-One can either initialize multiple contracts in a single tx,
-or "step" a single contract state. It is not possible to step multiple contracts
-or Initialize a contract while also stepping another contract.
+A scalar that can represent any JSON Object value.
 """
+scalar JSONObject
+
+input LockedAmountFilter {
+	amount: NumFilter
+	currencySymbol: StringFilter
+	tokenName: StringFilter
+	accountOwner: AccountOwnerFilter
+	numberOfAccounts: NumFilter
+}
+
+type LockedAmountsResult {
+	amount: Float!
+	currencySymbol: String!
+	tokenName: String!
+	accountOwnerRole: String
+	accountOwnerAddr: String
+}
+
 type MarloweTransition {
-	datum: String!
-	redeemer: String!
+	meta: String
+	datumJson: String
+	inputsJson: String
+	inputs: [String!]
 	txId: String!
-	"""
-	Index of the UTXO that caused this transition. None if this transition finalized the contract (eg. no output was made to the Marlowe validator)
-	"""
 	utxoIndex: Float
-	"""
-	This is true if there can not be any more transitions after this one.
-	"""
 	end: Boolean!
-	"""
-	Slot number in which this transition occurred
-	"""
 	slot: Float!
-	"""
-	Block in which this transition occurred
-	"""
-	block: String!
+	blockHash: String!
 	blockNum: Float!
 	invalid: Boolean!
 	issues: [String!]!
 	marloweScanStatus: String
+	lockedAmounts: [LockedAmountsResult!]
 }
 
-input MyFilter {
-	id: StringFilter
-	shortId: StringFilter
-	hasIssues: Boolean
+input NumFilter @oneOf {
+	eq: Float
+	gt: Float
+	lt: Float
+	lte: Float
+	gte: Float
 }
 
 """
@@ -125,11 +216,20 @@ input Pagination {
 	before: String
 	first: Int
 	last: Int
+	pageSize: Int
+	page: Float
+}
+
+type PerfStats {
+	"""
+	calculated using a sliding window of 60 seconds
+	"""
+	blocksIndexedPerSecond: Int!
 }
 
 type QueryRoot {
 	stats: String!
-	contracts(filter: MyFilter, pagination: Pagination, pageSize: Int, page: Float): ContractConnection!
+	contracts(filter: ContractsFilter, pagination: Pagination): ContractConnection!
 	currentBlock: String
 }
 
@@ -142,7 +242,23 @@ input StringFilter @oneOf {
 }
 
 type SubscriptionRoot {
-	interval(n: Int! = 1): Int!
+	indexerPerfStats: PerfStats!
+	interval: Int!
+}
+
+input TransitionFilter {
+	"""
+	Only show the most recent transition
+	"""
+	last: Boolean
+	end: Boolean
+	issues: Boolean
+	txId: String
+	slot: Float
+	blockHash: String
+	blockNum: Float
+	marloweScanStatus: String
+	issuesMatch: String
 }
 
 schema {

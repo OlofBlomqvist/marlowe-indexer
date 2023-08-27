@@ -15,82 +15,9 @@ use crate::miniprotocols::*;
 use error_stack::{ResultExt,Report};
 use pallas::ledger::traverse::MultiEraHeader;
 use thiserror::Error;
-use std::time::Instant;
 
 pub use pallas_network as pallas_network_ccs;
 
-pub struct ProgressTracker {
-    start_time: Instant,
-    total_items: u64,
-    processed_items: u64,
-    skipped_items: Option<u64>,
-}
-
-impl ProgressTracker {
-    
-    pub fn new(total_items: u64) -> Self {
-        ProgressTracker {
-            start_time: Instant::now(),
-            total_items,
-            processed_items: 0,
-            skipped_items: None
-        }
-    }
-
-    pub fn update_skipped(&mut self, skipped: u64) {
-        self.skipped_items = Some(skipped);
-    }
-
-    pub fn update_processed(&mut self, processed: u64, total: u64) {
-        self.processed_items = processed;
-        self.total_items = total;
-    }
-    
-    pub fn percentage_complete(&self) -> f64 {
-        if self.total_items == 0 {
-            return 0.0; // To avoid division by zero.
-        }
-        (self.processed_items as f64 / self.total_items as f64) * 100.0
-    }
-
-    pub fn estimated_hours_minutes_left(&self) -> (u64,u64) {
-
-        // If we haven't processed items beyond the skipped ones, we can't estimate the time left.
-        if let Some(skipped) = &self.skipped_items { 
-            if &self.processed_items <= skipped {
-                return (0, 0);
-            }
-        }
-    
-        // Calculate the elapsed time in seconds.
-        let elapsed_seconds = self.start_time.elapsed().as_secs();
-    
-        // Calculate the rate of processing items per second, accounting for skipped items.
-        let effective_processed = 
-            if let Some(skipped) = &self.skipped_items {
-                self.processed_items - skipped
-            } else {
-                self.processed_items
-            };
-
-        let rate = effective_processed as f64 / elapsed_seconds as f64;
-    
-        // Calculate the estimated time required for the remaining items.
-        let remaining_items = self.total_items - self.processed_items;
-        let estimated_seconds_left = (remaining_items as f64 / rate) as u64;
-    
-        // Convert the estimated time to hours and minutes.
-        let hours = estimated_seconds_left / 3600;
-        let minutes = (estimated_seconds_left % 3600) / 60;
-    
-        (hours, minutes)
-    }
-    
-    
-    
-    
-
-}
 
 pub enum Client {
     TcpClient(PeerClient),
@@ -102,7 +29,6 @@ pub struct CardanoChainSync {
     pub configuration: Configuration,
     pub worker: Box<(dyn ChainSyncReceiver + Send)>,
     pub intersect : Option<(u64,Vec<u8>)>,
-    pub progress : ProgressTracker,
     pub connection_type : ConnectionType
 }
 
@@ -115,9 +41,6 @@ pub enum SyncBlock<'a>  {
     N2N(&'a pallas_network::miniprotocols::chainsync::NextResponse<pallas_network::miniprotocols::chainsync::HeaderContent>),
     N2C(&'a pallas_network::miniprotocols::chainsync::NextResponse<pallas_network::miniprotocols::chainsync::BlockContent>)
 }
-
-// TODO - Should we sync blocks here, or at least allow for enabling that, so that 
-// if adding workers to an existing ccs service, we dont need to sync all blocks from a node?
 
 impl CardanoChainSync {
 
@@ -203,13 +126,11 @@ impl CardanoChainSync {
     }
 
     pub fn new(configuration:Configuration, worker: Box<dyn ChainSyncReceiver + Send>, intersect: (u64,Vec<u8>), connection_type: ConnectionType) -> Self {
-        let pt = ProgressTracker::new(0);        
         CardanoChainSync { 
             configuration ,
             client: None,
             worker,
             intersect: Some(intersect.clone()),
-            progress: pt,
             connection_type
         }
     }
@@ -261,16 +182,7 @@ impl CardanoChainSync {
                     let hash = header.hash();
                     
                     self.intersect =  Some((slot,hash.to_vec()));
-
-                    if self.progress.skipped_items.is_none() {
-                        self.progress.update_skipped(header.number())
-                    }
                     
-                    self.progress.update_processed(header.number(), tip.1);
-                    
-                    //info!("[{}% DONE] Estimated time until fully synced: {}h {}m. (skipped:{:?} , processed: {})",x,info.0,info.1,self.progress.skipped_items, self.progress.processed_items);
-
-                    //info!("GOT INFO ABOUT NEW BLOCK TO FETCH : {hash:?}");
                     match &mut self.client {
                         None => Err(Report::new(ChainSyncError::Message("CardanoChainSync bug: no client".into()))),
                         Some(Client::TcpClient(x)) => {
@@ -318,17 +230,6 @@ impl CardanoChainSync {
                         let slot = block.slot();
                         let hash = block.hash();
                         self.intersect =  Some((slot,hash.to_vec()));
-                        
-                        
-                        if self.progress.skipped_items.is_none() {
-                            self.progress.update_skipped(block.number())
-                        }
-                        
-                        self.progress.update_processed(block.number(), tip.1);
-                        let _info = self.progress.estimated_hours_minutes_left();
-                        let _x = self.progress.percentage_complete() as u64;
-                        //info!("[{}% DONE] Estimated time until fully synced: {}h {}m. (skipped:{:?} , processed: {})",x,info.0,info.1,self.progress.skipped_items, self.progress.processed_items);
-
 
                         Ok(ChainSyncEvent::Block(ChainSyncBlock { bytes: cbor.0.clone() }, tip.clone()))
                     }
@@ -415,7 +316,6 @@ use async_trait::async_trait;
 pub trait ChainSyncReceiver{
     async fn handle_event(&mut self,event:&ChainSyncEvent);
 }
-
 
 fn to_traverse(header: &pallas_network::miniprotocols::chainsync::HeaderContent) -> Result<MultiEraHeader<'_>, String> {
     let out = match header.byron_prefix {

@@ -7,7 +7,7 @@ pub(crate) type ContractId = String;
 pub(crate) type SlotId = u64;
 
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug)]
 pub (crate) struct OrderedContracts {
     pub contracts_in_order: Vec<Contract>,
     pub lookup_table: HashMap<ContractId, usize>,
@@ -43,7 +43,7 @@ impl OrderedContracts {
         let contracts_to_remove: Vec<ContractId> = self.contracts_in_order
             .iter_mut()
             .filter_map(|contract| {
-                contract.transitions.retain(|utxo| utxo.slot <= slot_num);
+                contract.transitions.retain(|utxo| utxo.abs_slot <= slot_num);
                 if contract.transitions.is_empty() {
                     Some(contract.id.clone())
                 } else {
@@ -115,24 +115,24 @@ impl OrderedContracts {
     
 }
 
-#[derive(Debug,Clone,async_graphql::SimpleObject,PartialEq)]
+
+#[derive(Debug,Clone)]
 pub struct Contract {
+
     /// + slot id of the block in which this contract was initialized 
     /// + index of the tx in that block 
     /// + index of the output containing the contract inside the tx.
     /// ... converted to base58.
     pub short_id: String, 
-    
-    /// hash id of the tx that initially created this contract instance
-    pub id:String,
 
-    // todo: current contract state avail here as well.
-    // a: resolved once ?
-    // b: resolved on first access ?
-    // c: shortcut to last tx ?
+    /// "tx_hash#utxo_id" of the tx that initially created this contract instance
+    pub id: String,
 
     /// All states in the contract, in order of first to last.
-    pub transitions: Vec<MarloweTransition>
+    pub transitions: Vec<MarloweTransition>,
+
+    /// Each version of the Marlowe validator script has its own hash.
+    pub validator_hash : String
 }
 
 /// This represents a single UTXO inside of a transaction which 
@@ -140,10 +140,11 @@ pub struct Contract {
 /// One can either initialize multiple contracts in a single tx,
 /// or "step" a single contract state. It is not possible to step multiple contracts
 /// or Initialize a contract while also stepping another contract.
-#[derive(Debug,Clone,async_graphql::SimpleObject,PartialEq)]
+#[derive(Debug,Clone)]
 pub struct MarloweTransition {
-    pub datum : String, // todo - more useful info here..
-    pub redeemer : String, // todo - more useful info here..
+
+    pub validity_range: (Option<u64>,Option<u64>),
+
     pub tx_id : String, // index of the tx which created this utxo
 
     /// Index of the UTXO that caused this transition. None if this transition finalized the contract (eg. no output was made to the Marlowe validator) 
@@ -153,7 +154,7 @@ pub struct MarloweTransition {
     pub end : bool,
 
     /// Slot number in which this transition occurred
-    pub slot : f64,    
+    pub abs_slot : f64,    
 
     /// Block in which this transition occurred
     pub block : String,
@@ -168,7 +169,24 @@ pub struct MarloweTransition {
     pub issues : Vec<String>,
 
     // TEMP
-    pub marlowe_scan_status: Option<String>
+    pub marlowe_scan_status: Option<String>,
+
+    pub datum : Option<marlowe_lang::types::marlowe::MarloweDatum>,
+    pub datum_hash : Option<String>,
+
+    pub inputs : Option<Vec<marlowe_lang::types::marlowe::PossiblyMerkleizedInput>>,
+    
+    pub meta : Option<String>,
+
+    // For contracts that use merkleized continuations, this property will be populated when 
+    // a transition uses merkleized inputs
+    pub continuations : std::collections::HashMap<String,marlowe_lang::types::marlowe::Contract>,
+
+    // -- Original data so we can validate that marlowe-rs gets to the same result after applying inputs
+    // -- These are optional because merkleized contracts and transactions that use datum-hash rather than inline datums
+    // -- will not have them available until the utxo is consumed.
+    pub original_plutus_datum_bytes : Option<Vec<u8>>,
+    pub original_redeemer_bytes : Option<Vec<u8>>
 }
 
 
