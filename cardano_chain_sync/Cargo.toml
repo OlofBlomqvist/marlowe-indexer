@@ -9,7 +9,7 @@ type = "lib"
 [dependencies]
 async-trait = "0.1.68"
 bytes = "1.4.0"
-error-stack = "0.3.1"
+error-stack = "0.4.0"
 hex = "0.4.3"
 pallas = "0.18.1"
 pallas-primitives = "0.18.1"
