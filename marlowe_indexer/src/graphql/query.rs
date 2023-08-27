@@ -527,7 +527,7 @@ impl Contract {
         }
 
 
-        return serde_json::to_string_pretty(&accly).unwrap();
+        //return serde_json::to_string_pretty(&accly).unwrap();
 
 
         match &d.contract {

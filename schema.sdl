@@ -221,10 +221,7 @@ input Pagination {
 }
 
 type PerfStats {
-	"""
-	calculated using a sliding window of 60 seconds
-	"""
-	blocksIndexedPerSecond: Int!
+	indexedContracts: Int!
 }
 
 type QueryRoot {
@@ -243,7 +240,6 @@ input StringFilter @oneOf {
 
 type SubscriptionRoot {
 	indexerPerfStats: PerfStats!
-	interval: Int!
 }
 
 input TransitionFilter {
