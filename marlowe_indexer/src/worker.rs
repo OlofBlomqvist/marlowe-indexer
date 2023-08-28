@@ -5,7 +5,7 @@ use opentelemetry::KeyValue;
 use pallas::ledger::addresses::Address;
 use pallas_primitives::Fragment;
 use pallas_traverse::{MultiEraTx, OriginalHash, MultiEraOutput};
-use tracing::{info,  warn, trace};
+use tracing::{info,  warn, info_span, Instrument};
 use crate::state::{State, SlotId, MarloweTransition, Contract, OutputReference};
 
 use cardano_chain_sync::pallas_network_ccs as pallas_network;
@@ -44,25 +44,28 @@ impl crate::ChainSyncReceiver for MarloweSyncWorker {
                 let decoded = b.decode().expect("decode block from vec should always work");
                 let txs = decoded.txs();
                 let tx_iter = txs.iter().enumerate();
-                // let _guard = span
-                //     .record("tx_count",txs.len())
-                //     .record("block_id",&decoded.hash().to_string())
-                //     .record("block_num",&decoded.number().to_string()).enter(); 
-                    
+                let txcount = txs.len();
 
+                
+                let span = info_span!("handling block", tx_count = txcount, block_hash = &decoded.hash().to_string(), block_num = &decoded.number().to_string());
+               
                 for (i,t) in tx_iter {
                     self.apply_transaction(
                         i,
                         decoded.slot(), 
                         t,
                         b,
-                    ).await; 
+                    ).instrument(span.clone()).await; 
                 }        
                 
             }
             
             cardano_chain_sync::ChainSyncEvent::Rollback { block_slot,tip} => {
                 self.tip = tip.clone();
+
+                let span = info_span!("rollback", rollback_to_block_slot = block_slot);
+                let _guard = span.enter();
+
                 self.rollback(
                     *block_slot
                 ).await;
@@ -78,7 +81,8 @@ impl crate::ChainSyncReceiver for MarloweSyncWorker {
 
 impl MarloweSyncWorker {
     
-    #[tracing::instrument(skip_all,fields(block_num=tracing::field::Empty))]
+    //#[tracing::instrument(skip_all,fields(block_num=tracing::field::Empty,level="debug"))]
+    //let span = tracing::info_span!("handle_new_block",block_id = tracing::field::Empty);
     pub async fn apply_transaction<'a>(&mut self, tx_index:usize, slot:SlotId,transaction:&MultiEraTx<'a>,block:&ChainSyncBlock) {
         
         {
@@ -86,8 +90,6 @@ impl MarloweSyncWorker {
             state_accessor.last_block_slot = Some(slot);
             state_accessor.last_block_hash = Some(block.decode().unwrap().hash());
         }
-
-        
 
         let mut consumed_from_contract_id : Option<String> = None;
 
@@ -183,7 +185,26 @@ impl MarloweSyncWorker {
             }
         ).collect();
 
+        if out_to_marlowe.is_empty() && consumed_from_marlowe_address.is_empty() {
+            return
+        }
+
         let block = block.decode().unwrap();
+
+        let tx_hash = transaction.hash().to_string();
+        
+        // we now know that this tx contains inputs or outputs to the marlowe validator, so lets create a span
+        // with some specific attribs attached.
+        let span = tracing::info_span!("MARLOWE-TX", 
+            tx_hash, 
+            closed_contracts = tracing::field::Empty, 
+            initialized_contracts = tracing::field::Empty, 
+            stepped_contracts = tracing::field::Empty
+        );
+
+        let mut closed = 0;
+        let mut initialized = 0;
+        let mut stepped = 0;
 
         if consumed_from_marlowe_address.len() == 1 {
 
@@ -193,7 +214,12 @@ impl MarloweSyncWorker {
             consumed_from_contract_id = Some(consumed_id.clone());
 
             if out_to_marlowe.is_empty() {
-                trace!("Contract {:?} was closed by tx {:?}",&consumed_from_contract_id,transaction.hash().to_string());
+                closed = closed + 1;
+                span.record("closed_contracts", closed);
+                span.in_scope(||{
+                    info!("Contract {:?} was closed by tx {:?}",&consumed_from_contract_id,transaction.hash().to_string());
+                });
+                
             }
 
             if let Some(redeemers) = transaction.redeemers() {
@@ -277,7 +303,11 @@ impl MarloweSyncWorker {
                         (None,None,None,None)
                     };
                     
-                tracing::trace!("This tx consumes {consumed_short_id}");
+                stepped = stepped + 1;
+                span.record("initialized_contracts", stepped);
+                span.in_scope(||{
+                    tracing::info!("TX {} causes a transition within contract {consumed_short_id}",transaction.hash().to_string());
+                });
 
                 let mut rw_state_accessor = self.state.write().await;
                 let contract = rw_state_accessor.ordered_contracts.get_mut(&consumed_short_id).unwrap();         
@@ -370,10 +400,6 @@ impl MarloweSyncWorker {
                         panic!("marlowe-indexer bug: found a transaction that consumes an utxo on the marlowe validator address, but the consumed utxo has no datum, only the hash - and the consuming transaction also does not have the datum matching the hash..")
                     }
                 }
-
-                if  previous_transition.utxo_index.is_none() {
-                    println!("WHAT THE FUCK: {:?}... that shit is being consumed by this tx: {}",previous_transition,transaction.hash().to_string())
-                }
                 
                 let k = {
                     OutputReference {
@@ -405,6 +431,13 @@ impl MarloweSyncWorker {
         if !out_to_marlowe.is_empty() || consumed_from_contract_id.is_some() {
             
             if !out_to_marlowe.is_empty() && consumed_from_contract_id.is_none() {
+                
+                initialized = initialized + 1;
+                span.record("initialized_contracts", initialized);
+                span.in_scope(|| {
+                    info!("This tx contains new contracts");
+                });
+                
                 let mut created_ids = vec![];
                 
                 let mut datums : std::collections::HashMap<pallas_crypto::hash::Hash<32>,&[u8]> = std::collections::HashMap::new();
@@ -516,7 +549,11 @@ impl MarloweSyncWorker {
                     
                     let new_count = rw_state_accessor.ordered_contracts.contract_count();
 
+                    
+                
                     info!("New contract found in block {}: {}#{}. There are now {} known contracts",block.number().to_string(),transaction.hash(),i,&new_count);
+                  
+                    
                     
                     // We must add an output ref so that if we see any txs later that consumes this utxo, we know to handle it
                     rw_state_accessor.ordered_contracts.utxo_to_contract_lookup_table.insert(
@@ -538,6 +575,7 @@ impl MarloweSyncWorker {
             }
 
             if !consumed_from_marlowe_address.is_empty() {
+                
                 for (_consumed_utxo,id,_short_id,consumed_transition_item,_contract_index,_index_of_consumed_input) in consumed_from_marlowe_address {
                     tracing::debug!("tx {:?} consumes utxo {}#{} (from the tx chain of {:?})",transaction.hash(),consumed_transition_item.tx_id,consumed_transition_item.utxo_index.expect("any transition that is consumed must have an utxo_index"),id);                        
                 }
@@ -548,10 +586,11 @@ impl MarloweSyncWorker {
     }
 
     // todo: this needs to be properly implemented and tested
+    #[tracing::instrument(level="warn")]
     pub async fn rollback<'a>(&mut self,  block_slot: SlotId) -> bool {
         let mut state_accessor = self.state.write().await;
         if state_accessor.last_block_slot.is_some() {
-            warn!("rolling back everything from slot id {:?} to {}",state_accessor.last_block_slot,block_slot);
+            warn!("Rolling back everything from slot id {:?} to {}",state_accessor.last_block_slot,block_slot);
         }
         state_accessor.last_block_slot = Some(block_slot);
         state_accessor.ordered_contracts.rollback(block_slot as f64);

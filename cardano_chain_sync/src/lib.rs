@@ -43,7 +43,8 @@ pub enum SyncBlock<'a>  {
 
 impl CardanoChainSync {
 
-    #[tracing::instrument(skip(self))]
+    // we will just create new traces for each handled event rather than connecting them 
+    // all to a single parent
     async fn connect(&mut self) -> Result<(),Report<ChainSyncError>> {
         
         debug!("Connecting to {} (using magic: {})",&self.configuration.address,&self.configuration.magic);
@@ -173,8 +174,6 @@ impl CardanoChainSync {
 
             SyncBlock::N2N(next) => match next {
                 NextResponse::RollForward(header, tip) => {
-                    
-                    
 
                     let header = to_traverse(header).unwrap();
                     let slot = header.slot();
@@ -235,8 +234,12 @@ impl CardanoChainSync {
                     NextResponse::RollBackward(point, tip) => {
                         match &point {
                             Point::Origin => debug!("Rollback to origin"),
-                            Point::Specific(slot, _) => debug!("Rollback to slot {slot}"),
+                            Point::Specific(slot, hash) => {
+                                self.intersect = Some((*slot,hash.clone()));
+                                debug!("Rollback to slot {slot}")
+                            },
                         };
+                        
                         Ok(ChainSyncEvent::Rollback { block_slot:point.slot_or_default(), tip: tip.clone()})
                     }
                     NextResponse::Await => {
@@ -263,12 +266,12 @@ impl CardanoChainSync {
                 
                 match chain_sync.has_agency() {
                     true => {
-                        let next = chain_sync.request_next().await.map_err(Report::from).change_context(ChainSyncError::new("not cool"))?;
+                        let next = chain_sync.request_next().await.map_err(Report::from).change_context(ChainSyncError::new("request next failed while we had agency"))?;
                         e = Some(self.handle_sync_response(SyncBlock::N2C(&next)).await?);
                     }
                     false => {
                         trace!("awaiting next block (blocking)");
-                        let next = chain_sync.recv_while_must_reply().await.map_err(Report::from).change_context(ChainSyncError::new("not cool"))?;
+                        let next = chain_sync.recv_while_must_reply().await.map_err(Report::from).change_context(ChainSyncError::new("recv_while_must_reply failed while they had agency"))?;
                         
                         e = Some(self.handle_sync_response(SyncBlock::N2C(&next)).await?);
                     }
@@ -279,7 +282,7 @@ impl CardanoChainSync {
                         self.worker.handle_event(&ee).await;
                         Ok(())
                     },
-                    None => panic!("Should not be possible to get empty result here."),
+                    None => unreachable!(),
                 }               
             },
             Some(Client::TcpClient(peer_client)) => {

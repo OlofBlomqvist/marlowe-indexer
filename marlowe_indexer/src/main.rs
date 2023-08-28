@@ -5,9 +5,8 @@
 use std::sync::Arc;
 use cardano_chain_sync::{*, configuration::ConfigurationBuilder};
 use clap::Parser;
-use tracing::debug;
-use tracing::{info, info_span, Instrument, warn};
-use tracing_subscriber::{FmtSubscriber, fmt::format::FmtSpan};
+use opentelemetry::sdk::{Resource, trace::XrayIdGenerator};
+use tracing_subscriber::{FmtSubscriber, fmt::{format::FmtSpan, self}};
 use anyhow::{Result, anyhow};
 use warp::{http::Response as HttpResponse, Rejection};
 use crate::worker::MarloweSyncWorker;
@@ -21,69 +20,113 @@ use async_graphql_warp::GraphQLBadRequest;
 use async_graphql::{http::GraphiQLSource, EmptyMutation, Schema};
 mod graphql;
 
-use opentelemetry_otlp::Protocol;
-use opentelemetry_otlp::WithExportConfig;
-use opentelemetry::{KeyValue, sdk::Resource};
+
 
 macro_rules! any_err {    
     ($expr:expr) => (anyhow::Context::with_context($expr.map_err(|e| anyhow!("{:?}", e)), ||concat!("@ ", file!(), " line ", line!(), " column ", column!())))}
 
 
-    pub async fn init_logging(level:&str,otel_tracing_endpoint:Option<String>) -> Result<()> {
+    pub async fn init_logging(level:&str,mut otel_tracing_endpoint:Option<String>) -> Result<()> {
+
 
         env_logger::Builder::from_env(
             env_logger::Env::new().default_filter_or(level)
         ).init();
 
-        let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(tracing::log::max_level().as_str()))
-            .add_directive("pallas_network=warn".parse().unwrap());
+        println!("Initializing logging ..");
+        
+        if otel_tracing_endpoint.is_none() {
+            match std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
+                Ok(endpoint) => {
+                    println!(">>> ENV:OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: {} ::: ", endpoint);
+                    otel_tracing_endpoint = Some(endpoint);
+                },
+                _ => {},
+            }
+        }
 
+        if otel_tracing_endpoint.is_some()  {
+            match std::env::var("OTEL_SDK_DISABLED") {
+                Ok(value) => {
+                    if value.parse::<bool>().unwrap_or_default() {
+                        tracing::info!(">>> ENV:OTEL_SDK_DISABLED: TRUE");
+                        otel_tracing_endpoint = None;                   
+                    }
+                    
+                },
+                _ => {}
+            }
+        }
+
+
+        let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(tracing::log::LevelFilter::Info.as_str()))
+            .add_directive("pallas_network=warn".parse().unwrap());
+            
+
+        if let Some(otel_addr) = &otel_tracing_endpoint {
+            
+            let svc_name = "Marlowe Sync";
+
+            let resource = Resource::new(vec![opentelemetry::KeyValue::new("service.name", svc_name)]);
+           
+            use tracing_subscriber::layer::SubscriberExt;
+            use tracing_subscriber::Registry;     
+           
+            let exporter = opentelemetry_otlp::WithExportConfig::with_endpoint(opentelemetry_otlp::new_exporter().tonic(), otel_addr.clone());
+        
+            let tracer = opentelemetry_otlp::new_pipeline()
+                .tracing()
+                .with_trace_config(
+                    opentelemetry::sdk::trace::Config::default()
+                        .with_sampler(opentelemetry::sdk::trace::Sampler::AlwaysOn)
+                        .with_resource(resource).with_id_generator(XrayIdGenerator::default())
+                )
+                .with_exporter(exporter).with_batch_config(opentelemetry::sdk::trace::BatchConfig::default())
+                .install_batch(opentelemetry::sdk::runtime::Tokio)
+                .unwrap();
+
+            let otel_layer = 
+                tracing_opentelemetry::OpenTelemetryLayer::default()
+                .with_tracer(tracer)
+                .with_tracked_inactivity(true)
+                .with_exception_fields(true)
+                .with_exception_field_propagation(true)
+                .with_location(true);
+
+            let combo_subscriber = Registry::default()
+                .with(env_filter)
+                .with(otel_layer)
+                .with(
+                    fmt::Layer::default()
+                        .with_line_number(true)
+                        .with_span_events(FmtSpan::NONE)
+                        .log_internal_errors(false)
+                        .pretty()
+                );
+        
+            tracing::subscriber::set_global_default(combo_subscriber).expect("unable to set global subscriber");
+
+            tracing::info!("Logs will be sent to {}. Service name: {:?}. You can disable this using env:OTEL_SDK_DISABLED.",&otel_addr,svc_name);
+    
+            
+            return  Ok(())    
+        } 
+         
         let console_subscriber = FmtSubscriber::builder()
             .with_env_filter(env_filter)
             .with_line_number(true)
             .with_span_events(FmtSpan::NONE)
             .log_internal_errors(false)
-            .pretty()     
-            .finish();
-    
-        if let Some(otel_addr) = otel_tracing_endpoint {
+            .pretty().finish();      
+
+            
+        tracing::subscriber::set_global_default(console_subscriber)?;
+
+        tracing::info!("No telemetry data will be sent from this application instance, only local logging is enabled.");
+           
+        Ok(())    
         
-            let resource = Resource::new(vec![KeyValue::new("service.name", "Marlowe Indexer 11")]);
-            let otlp_exporter = opentelemetry_otlp::new_exporter()
-                .tonic() 
-                .with_endpoint(otel_addr)
-                .with_protocol(Protocol::Grpc) 
-                .with_timeout(tokio::time::Duration::from_secs(3));
-            
-            let tracer = opentelemetry_otlp::new_pipeline()
-                .tracing()
-                .with_exporter(otlp_exporter)
-                .with_trace_config(
-                    opentelemetry_sdk::trace::Config::default()
-                        .with_sampler(opentelemetry_sdk::trace::Sampler::AlwaysOn)
-                        .with_resource(resource)
-                )
-                .install_batch(opentelemetry::runtime::Tokio)?;
-            
-            let otel_layer = 
-                tracing_opentelemetry::OpenTelemetryLayer::default()
-                .with_tracer(tracer)
-                .with_tracked_inactivity(true);
-            
-            let s = 
-                tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt::with(console_subscriber, otel_layer);
-            
-            tracing::subscriber::set_global_default(s)?;
-
-
-            Ok(())    
-        } else {
-            
-            tracing::subscriber::set_global_default(console_subscriber)?;
-
-            Ok(())    
-        }
     }
 
 
@@ -98,7 +141,7 @@ async fn graphql_handler(
 ) -> Result<impl warp::Reply, Rejection> {
     
 
-    info!("Got request from {}",src_ip);
+    tracing::info!("Got request from {}",src_ip);
     let schema = graphql::create_schema();
     let schema = 
         Schema::build(graphql::types::QueryRoot, EmptyMutation, crate::graphql::types::SubscriptionRoot)
@@ -129,12 +172,14 @@ async fn main() -> Result<()> {
 
     init_logging(log_level,opt.otel_endpoint).await?;
 
-    info!("Marlowe Indexer Started");
+    let span = tracing::error_span!("MAIN");
+    span.entered().in_scope(||{
+        tracing::info!("Marlowe Indexer Started");
+        tracing::debug!("Saving active GraphQL schema to: {}/schema.sdl",std::env::current_dir().unwrap().display());        
+        std::fs::write("schema.sdl", graphql::create_schema().sdl()).unwrap();
+    });
+    
 
-    debug!("Saving active schema to: {}/schema.sdl",std::env::current_dir().unwrap().display());        
-    
-    std::fs::write("schema.sdl", graphql::create_schema().sdl()).unwrap();
-    
     let configuration = 
         match opt.network {
             crate::args::Network::Preprod => {
@@ -190,8 +235,11 @@ async fn main() -> Result<()> {
                     ConnectionType::Tcp 
                 }
             );
-        let span = info_span!("worker_thread");
-        ccs.run().instrument(span).await;
+        
+        ccs.run().await; // <-- we no longer create a root span here
+                         //     since it was annoying to read the logs when all
+                         //     events belonged to a single trace.
+                         //     intead we create one trace per handled event from the node.
         std::result::Result::<(),String>::Ok(())
 
     });
@@ -245,7 +293,7 @@ async fn main() -> Result<()> {
                     warp::hyper::StatusCode::BAD_REQUEST,
                 ));
             }
-            warn!("Invalid Request: {:?}",err);
+            tracing::warn!("Invalid Request: {:?}",err);
             Ok(warp::reply::with_status(
                 "INTERNAL_SERVER_ERROR".to_string(),
                 warp::hyper::StatusCode::INTERNAL_SERVER_ERROR,
@@ -256,7 +304,7 @@ async fn main() -> Result<()> {
     
     _ = tokio::try_join!(warp_task,worker_task);
     
-    info!("Application stopping.");
+    tracing::info!("Application stopping.");
 
     opentelemetry::global::shutdown_tracer_provider();
 

@@ -7,9 +7,6 @@ edition = "2021"
 
 [dependencies]
 cardano_chain_sync = { path = "../cardano_chain_sync" }
-tracing = "0.1.37"
-tracing-subscriber = { version="0.3.17", features=["env-filter","fmt"] }
-tracing-opentelemetry = "*"
 tokio = { version ="1.28.0", features = ["full"] }
 anyhow = { version ="1.0.71" }
 error-stack = {version="0.4.0", features=["std","anyhow","hooks"]}
@@ -20,18 +17,14 @@ pallas-crypto = "*"
 #pallas-network = { path = "C:/Users/oblink/Documents/GitHub/pallas/pallas-network" }
 #pallas_network = { git = "https://github.com/OlofBlomqvist/pallas", branch="feat-win-pipes", package="pallas-network" }
 warp = "0.3"
-opentelemetry = { version="0.19.0", features = ["rt-tokio"] }
-opentelemetry-otlp = { version ="0.12.0"}
+
 tonic = "*"
-opentelemetry_sdk = "0.19.0"
-opentelemetry_api = "0.19.0"
-opentelemetry-contrib = "0.11.0"
 #marlowe_lang = { version = "0.1.22",features=["unstable","utils"] }
 #marlowe_lang = { path = "../../marlowe_rust",features=["unstable","utils"] }
 marlowe_lang = { git = "https://github.com/OlofBlomqvist/marlowe_lang",features=["unstable","utils"] }
 hex = "0.4.3"
-async-graphql = "5.0.10"
-async-graphql-warp = "5.0.10"
+async-graphql = "6.0.4"
+async-graphql-warp = "6.0.4"
 async-trait = "0.1.68"
 serde_json = "1.0.96"
 env_logger = "0.10.0"
@@ -39,13 +32,19 @@ bs58 = "*"
 ctrlc = "3.1"
 reqwest = "*"
 crossterm = "*"
-tracing-core = "0.1.31"
 clap = "4.3.21"
 structopt = "0.3.26"
 strum_macros = "0.25.2"
 futures-timer = "3.0.2"
 serde = "1.0.183"
 
+
+opentelemetry = {version="0.20",features=["rt-tokio"]}
+opentelemetry-stdout = { version = "0.1.0", features = ["trace"] }
+tracing = "0.1"
+tracing-opentelemetry = "0.20"
+tracing-subscriber = { version = "0.3", features=["std","env-filter","fmt"] }
+opentelemetry-otlp = "0.13.0"
 
 [features]
 debug = []
