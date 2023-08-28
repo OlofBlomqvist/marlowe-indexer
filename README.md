@@ -1,3 +1,5 @@
+![CI Build](https://github.com/olofblomqvist/marlowe-indexer/actions/workflows/rust.yml/badge.svg?branch=main)
+
 # Marlowe Sync (indexer)
 
 An indexer for Marlowe smart contracts on the Cardano blockchain.
