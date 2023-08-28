@@ -1,10 +1,7 @@
 use crate::graphql::types::*;
 use async_graphql::*;
-use marlowe_lang::plutus_data::ToPlutusData;
 use marlowe_lang::types::marlowe::AccMap;
 use marlowe_lang::semantics::ContractSemantics;
-use pallas_primitives::Fragment;
-use pallas_traverse::ComputeHash;
 use tracing::info;
 use async_graphql::{
     connection::{Connection, Edge},
@@ -133,7 +130,7 @@ pub fn locked_amounts_filter_matches(filter:&LockedAmountFilter,contract:&Contra
 
 
         // Filter by amounts
-        let amounts_match = num_check_opt(&filter.amount, x.amount as f64);
+        let amounts_match = num_check_opt(&filter.amount, x.amount);
         
         // Filter by currency_symbol
         let symb_match = str_check_opt(&filter.currency_symbol, &x.currency_symbol);
@@ -147,14 +144,14 @@ pub fn locked_amounts_filter_matches(filter:&LockedAmountFilter,contract:&Contra
                 match af {
                     AccountOwnerFilter::Role(role_filter) => {
                         if let Some(aor) = &x.account_owner_role {
-                            str_check(role_filter,&aor)
+                            str_check(role_filter,aor)
                         } else {
                             false
                         }
                     },
                     AccountOwnerFilter::Address(addr_filter) => {
                         if let Some(aoa) = &x.account_owner_addr {
-                            str_check(addr_filter,&aoa)
+                            str_check(addr_filter,aoa)
                         } else {
                             false
                         }
@@ -172,7 +169,7 @@ pub fn locked_amounts_filter_matches(filter:&LockedAmountFilter,contract:&Contra
         
     }
 
-    return false
+    false
 
 }
 
@@ -184,12 +181,10 @@ impl crate::state::MarloweTransition {
     //async fn validity_range(&self) -> String { format!("{:#?}",&self.validity_range) }
     
 
-    async fn datum_json(&self) -> Option<String> { if let Some(d) = &self.datum { 
-        Some(marlowe_lang::serialization::json::serialize(d).unwrap_or_default())
-    }  else { None }}
+    async fn datum_json(&self) -> Option<String> { self.datum.as_ref().map(|d| marlowe_lang::serialization::json::serialize(d).unwrap_or_default())}
     
     async fn inputs_json(&self) -> Option<String> {
-        if self.inputs.is_none() { return None }
+        self.inputs.as_ref()?;
         Some(marlowe_lang::serialization::json::serialize(&self.inputs).unwrap_or_default())
     } 
     async fn inputs(&self) -> Option<Vec<String>> {
@@ -294,11 +289,14 @@ pub fn str_check(filter:&StringFilter,input_str:&str) -> bool {
     }
 }
 
+#[cfg(feature="debug")]
 fn slot_to_posix_time(slot: u64, sc: &SlotConfig) -> u64 {
     let ms_after_begin = (slot - sc.zero_slot) * sc.slot_length;
     sc.zero_time + ms_after_begin
 }
 
+#[cfg(feature="debug")]
+#[allow(dead_code)]
 fn posix_time_to_slot(posix_time: u64, sc: &SlotConfig) -> u64 {
     ((posix_time - sc.zero_time) / sc.slot_length) + sc.zero_slot
 }
@@ -306,6 +304,8 @@ fn posix_time_to_slot(posix_time: u64, sc: &SlotConfig) -> u64 {
 
 #[cfg(feature="debug")]
 fn marlowe_rs_test(contract:&Contract) -> String {
+    use marlowe_lang::plutus_data::ToPlutusData;
+
     
     let preprod_slot_config = SlotConfig {
         zero_time: 1655683200000,
@@ -429,9 +429,7 @@ fn marlowe_rs_test(contract:&Contract) -> String {
                     
                     let (our_hex,original_hex) = (hex::encode(calc_bytes),hex::encode(original_bytes));
 
-                    let hexly = compare_hex_strings(&our_hex,&original_hex);
-
-                    return format!("calculated bytes do not equal original. ({} --> {})  calculated: {our_hex}\n\noriginal: {original_hex}\n\nContract DSL of the result: {}\n\nState of the result: {:?}\n\n\n---> hexly: {hexly}",
+                    return format!("calculated bytes do not equal original. ({} --> {})  calculated: {our_hex}\n\noriginal: {original_hex}\n\nContract DSL of the result: {}\n\nState of the result: {:?}",
                     first.tx_id,second.tx_id, calculated_datum_as_per_marlowe_rs.contract.to_dsl(), calculated_datum_as_per_marlowe_rs.state)
                 } 
 
@@ -447,37 +445,6 @@ fn marlowe_rs_test(contract:&Contract) -> String {
     "OK".into()
 }
 
-fn compare_hex_strings(a: &str, b: &str) -> String {
-    let mut result = String::new();
-    let mut markers = String::new();
-
-    let chars_a = a.chars();
-    let chars_b = b.chars();
-
-    for (char_a, char_b) in chars_a.zip(chars_b) {
-        if char_a == char_b {
-            result.push(char_a);
-            markers.push(' ');
-        } else {
-            result.push(char_b);
-            markers.push('+');
-        }
-    }
-
-    // Handle extra characters in either string
-    for char_a in a.chars().skip(b.len()) {
-        markers.push('-');
-    }
-    for char_b in b.chars().skip(a.len()) {
-        result.push(char_b);
-        markers.push('+');
-    }
-
-    result.push('\n');
-    result.push_str(&markers);
-
-    result
-}
 
 #[Object]
 impl Contract {
@@ -544,10 +511,10 @@ impl Contract {
             _ => {}
         };
 
-        let mut contract_instance = marlowe_lang::semantics::ContractInstance::from_datum(&d);
+        let mut contract_instance = marlowe_lang::semantics::ContractInstance::from_datum(d);
 
         for (hash,cont) in &x.continuations {
-            contract_instance.add_continuation(&hash, cont)
+            contract_instance.add_continuation(hash, cont)
         }
 
         // running process here will step the contract forward until it requires an input action or is closed.
@@ -591,51 +558,31 @@ impl Contract {
     /// The datum of the last observed utxo in the contract chain
     async fn datum_json(&self) -> Option<String> {
         let x = self.transitions.last().expect("marlowe-indexer bug: any contract must have at least one transition");
-        if let Some(d) = &x.datum {
-            Some(marlowe_lang::serialization::json::serialize(d).unwrap_or_default())
-        } else {
-            None
-        }
+        x.datum.as_ref().map(|d| marlowe_lang::serialization::json::serialize(d).unwrap_or_default())
     }
 
     /// Script hash of the marlowe payout validator script used for this contract
     async fn payout_validator_hash(&self) -> Option<String> {
         let x = self.transitions.last().expect("marlowe-indexer bug: any contract must have at least one transition");
-        if let Some(ei) = &x.datum {
-            Some(ei.marlowe_params.0.to_string())
-        } else {
-            None
-        }
+        x.datum.as_ref().map(|ei| ei.marlowe_params.0.to_string())
     }
 
     /// The minimum time at which point this contract will be possible to transition to a possible next stage.
     async fn min_time(&self) -> Option<u64> {
         let x = self.transitions.last().expect("marlowe-indexer bug: any contract must have at least one transition");
-        if let Some(ei) = &x.datum {
-            Some(ei.state.min_time)
-        } else {
-            None
-        }
+        x.datum.as_ref().map(|ei| ei.state.min_time)
     }
 
     /// Current contract definition in DSL format
     async fn contract_dsl(&self) -> Option<String> {
         let x = self.transitions.last().expect("marlowe-indexer bug: any contract must have at least one transition");
-        if let Some(ei) = &x.datum {
-            Some(ei.contract.to_dsl())
-        } else {
-            None
-        }
+        x.datum.as_ref().map(|ei| ei.contract.to_dsl())
     }
 
     /// Current contract definition in JSON format
     async fn contract_json(&self) -> Option<String> {
         let x = self.transitions.last().expect("marlowe-indexer bug: any contract must have at least one transition");
-        if let Some(ei) = &x.datum {
-            Some(ei.contract.to_json().expect("marlowe-rs bug: should always be possible to serialize on-chain parties"))
-        } else {
-            None
-        }
+        x.datum.as_ref().map(|ei| ei.contract.to_json().expect("marlowe-rs bug: should always be possible to serialize on-chain parties"))
     }
 
     /// List of all remaining contract participants.
@@ -666,11 +613,7 @@ impl Contract {
     /// JSON serialized representation of the current contract state.
     async fn contract_state_json(&self) -> Option<String> {
         let x = self.transitions.last().expect("marlowe-indexer bug: any contract must have at least one transition");
-        if let Some(ei) = &x.datum {
-            Some(marlowe_lang::serialization::json::serialize(ei.state.clone()).expect("marlowe-rs bug: should always be possible to serialize on-chain data"))
-        } else {
-            None
-        }
+        x.datum.as_ref().map(|ei| marlowe_lang::serialization::json::serialize(ei.state.clone()).expect("marlowe-rs bug: should always be possible to serialize on-chain data"))
     }
 
     
@@ -707,7 +650,7 @@ impl Contract {
              return Ok(Some(-1.0))
            }
            for (merkle_hash,continuation) in &x.continuations {
-                machine.add_continuation(&merkle_hash, continuation);
+                machine.add_continuation(merkle_hash, continuation);
            }
            let (a,_b) = machine.process()?;
            match a.contract {
@@ -782,7 +725,7 @@ impl Contract {
                         None => return false,
                         Some(marlowe_status) => {
                             let found_match = marlowe_status.contains(marlowe_scan_status_filter);
-                            if found_match == false { return false }
+                            if !found_match { return false }
                         }
                     }                    
                 }
@@ -886,7 +829,7 @@ pub(crate) async fn testable_query(contracts: &OrderedContracts, params: QueryPa
                 let datum_to_check = &x.transitions.last().expect("must be at least one transition..").datum;
                 if let Some(d) = datum_to_check {
                     let numer_of_bounds = d.state.accounts.len();
-                    if !num_check(&bounds_filter, numer_of_bounds as f64) {
+                    if !num_check(bounds_filter, numer_of_bounds as f64) {
                         return false
                     };
                 } else {
@@ -932,7 +875,7 @@ pub(crate) async fn testable_query(contracts: &OrderedContracts, params: QueryPa
 
             // LOCKED AMOUNTS FILTER (if any account matches the filter, this contract should be included)
             if let Some(fla) = &f.account_state {
-                if !locked_amounts_filter_matches(&fla,x) { return false };                
+                if !locked_amounts_filter_matches(fla,x) { return false };                
             }    
             
             if let Some(meta_filter) = &f.meta {
@@ -955,8 +898,8 @@ pub(crate) async fn testable_query(contracts: &OrderedContracts, params: QueryPa
                 
                 // we dont want to compare the full datum everywhere so we convert the datum to hash and compare that instead
                 let datum_to_hash = |hex:&str| -> String {
-                    let pd = pallas_primitives::alonzo::PlutusData::decode_fragment(&hex::decode(&hex).unwrap()).unwrap();
-                    pd.compute_hash().to_string()                    
+                    let pd = <pallas_primitives::alonzo::PlutusData as pallas_primitives::Fragment>::decode_fragment(&hex::decode(&hex).unwrap()).unwrap();
+                    pallas_traverse::ComputeHash::compute_hash(&pd).to_string()                    
                 }; 
                 
                 let hash_filter = match &dtest {
@@ -1003,20 +946,36 @@ pub(crate) async fn testable_query(contracts: &OrderedContracts, params: QueryPa
 
     let first_last_items = match (params.first, params.last) {
         (Some(_),Some(_)) => return Err(QueryError::Generic("cannot use both 'first' and 'last' in the same query.".into())),
-        (Some(f), _) => {
-            if f < 1 {
+        
+        (Some(selected_first), _) => {
+            if selected_first < 1 {
                 return Err(QueryError::InvalidPagination)
             }
-            &x_filtered_items[0..f.min(x_filtered_items.len() as i32) as usize]
+            let l = selected_first.min(x_filtered_items.len() as i32) as usize;
+            println!("Selected first {selected_first} resulted in slice: [..{}]", l);
+            &x_filtered_items[0..l]
         },
-        (_, Some(l)) => {
-            if l < 1 {
+
+        (_, Some(selected_last)) => {
+            if selected_last < 1 {
                 return Err(QueryError::InvalidPagination)
             }
-            let s = x_filtered_items.len().saturating_sub(l as usize);
-            &x_filtered_items[s..]
+            let len_of_filtered_result = x_filtered_items.len();
+            if len_of_filtered_result < (selected_last as usize) {
+                //println!("[selected last is greater than the result set, so we will just return all items in the slice] Selected last {selected_last} resulted in slice: [..]");
+                &x_filtered_items[..]
+            } else {
+                let start_point = len_of_filtered_result - (selected_last as usize);
+                //println!("Selected last {selected_last} resulted in slice: [{}..] ... there are {} results in total",&start_point, len_of_filtered_result);
+                
+                //println!("this results in a slice with len {}",my_slice.len());
+                &x_filtered_items[start_point..]
+            }
+            
         },
-        _ => &x_filtered_items[..],
+
+        // WITHOUT SPECIFYING FIRST/LAST
+        _ => &x_filtered_items[..]        
     };
 
     log.push(format!("Items after first/last params: {}", first_last_items.len()));
@@ -1025,6 +984,7 @@ pub(crate) async fn testable_query(contracts: &OrderedContracts, params: QueryPa
     
     // Calculate total pages
     let total_pages = (total_matching_contracts as f32 / resolved_page_size as f32).ceil() as usize;
+    //println!("The result has {total_pages} pages");
 
     // If no page parameter is given, set to the last page, otherwise use the provided page
     let current_page: usize = match params.page {

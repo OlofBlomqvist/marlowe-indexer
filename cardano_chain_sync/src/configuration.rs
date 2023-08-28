@@ -1,4 +1,3 @@
-use error_stack::{Report, IntoReport};
 use thiserror::Error;
 use tracing::debug;
 
@@ -43,14 +42,14 @@ impl ConfigurationBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Configuration,Report<ConfigurationBuilderError>> {
+    pub fn build(self) -> Result<Configuration,error_stack::Report<ConfigurationBuilderError>> {
         
         let config = Ok(Configuration {
             address: self.address
-            .ok_or_else(|| ConfigurationBuilderError::new("address is not set.")).into_report()?,
+            .ok_or_else(|| ConfigurationBuilderError::new("address is not set.")).map_err(error_stack::Report::from)?,
             magic: self.magic
                 .ok_or_else(|| ConfigurationBuilderError::new("magic is not set."))
-                .into_report()?
+                .map_err(error_stack::Report::from)?
         });
 
         debug!("Configuration OK: {config:?}");

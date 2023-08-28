@@ -4,10 +4,10 @@ use std::collections::HashMap;
 use crate::graphql::types::{
     ContractsFilter,
     QueryParams,
-    StringFilter,
-    NumFilter
+    StringFilter
 };
 
+#[cfg(test)]
 fn setup_ordered_contracts(contract_count:usize) -> OrderedContracts {
 
     let ids : Vec<usize> = (1..contract_count + 1).collect();
@@ -169,8 +169,10 @@ async fn test_no_results_filter() {
     });
 
     let result = crate::graphql::query::testable_query(&contracts, QueryParams { filter, ..Default::default() }).await;
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap().edges.len(), 0);
+    match result {
+        Ok(_) => panic!("should not yield any results"),
+        Err(e) => assert_eq!(crate::graphql::query::QueryError::NoResult,e),
+    }
 }
 
 #[tokio::test]
@@ -248,8 +250,10 @@ async fn test_no_contracts() {
     let contracts = setup_ordered_contracts(0);
     let result = crate::graphql::query::testable_query(&contracts, 
         QueryParams { ..Default::default() }).await;
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap().edges.len(), 0);
+    match result {
+        Ok(_) => panic!("should not yield any results"),
+        Err(e) => assert_eq!(crate::graphql::query::QueryError::NoIndexedContracts,e),
+    }
 }
 
 #[tokio::test]
@@ -262,8 +266,10 @@ async fn test_filter_non_existent_value() {
     });
     let result = crate::graphql::query::testable_query(&contracts, 
         QueryParams { filter, ..Default::default() }).await;
-    assert!(result.is_ok());
-    assert_eq!(result.unwrap().edges.len(), 0);
+        match result {
+            Ok(_) => panic!("should not yield any results"),
+            Err(e) => assert_eq!(crate::graphql::query::QueryError::NoResult,e),
+        }
 }
 
 #[tokio::test]
@@ -276,10 +282,10 @@ async fn test_multiple_different_filters() {
     });
     let result = crate::graphql::query::testable_query(&contracts, 
         QueryParams { filter, ..Default::default() }).await;
-    assert!(result.is_ok());
-    let r = result.unwrap();
-    assert_eq!(r.edges.len(),0);
-    assert!(!r.has_next_page);
+    match result {
+        Ok(_) => panic!("should not yield any results"),
+        Err(e) => assert_eq!(crate::graphql::query::QueryError::NoResult,e),
+    }
     
 }
 
@@ -365,10 +371,12 @@ async fn test_full_page() {
 async fn test_partial_page() {
     let contracts = setup_ordered_contracts(55);
     let result = crate::graphql::query::testable_query(&contracts, 
-        QueryParams { first: Some(55), ..Default::default() }).await;
+        QueryParams { page:Some(1.0), first: Some(55), ..Default::default() }).await;
     assert!(result.is_ok());
     let x = result.unwrap();
-    assert_eq!(x.edges.len(), 50); 
+    println!("first: {:?}",x.edges.first().unwrap().cursor);
+    println!("last: {:?}",x.edges.last().unwrap().cursor);
+    assert_eq!(x.edges.len(), 50);  // we selected the first page here manually
     assert!(x.has_next_page);
     assert!(!x.has_previous_page);
     assert_eq!(x.additional_fields.total_number_of_contracts_matching_current_filter, 55);
@@ -382,11 +390,16 @@ async fn test_partial_page_using_latest() {
         QueryParams { last: Some(55), ..Default::default() }).await;
     assert!(result.is_ok());
     let x = result.unwrap();
-    assert_eq!(x.edges.len(), 50); 
+
+    // we default to returning the last page (most recent items) and since
+    // the default page size is 50 we will have the first 50 oldest items on the first page
+    // and the remaining 5 on the second (last) page.
+    assert_eq!(x.edges.len(), 5); 
+
     assert_eq!(x.additional_fields.total_number_of_pages_using_current_filter,2);
-    assert!(x.has_next_page);
-    assert!(!x.has_previous_page);
-    assert_eq!(x.additional_fields.current_page,1.0);
+    assert!(!x.has_next_page);
+    assert!(x.has_previous_page);
+    assert_eq!(x.additional_fields.current_page,2.0);
     assert_eq!(x.additional_fields.total_number_of_contracts_matching_current_filter, 55);
 }
 
@@ -397,6 +410,10 @@ async fn test_partial_page_with_specific_page_size() {
         QueryParams { first: Some(55), page_size: Some(55), ..Default::default() }).await;
     assert!(result.is_ok());
     let x = result.unwrap();
+    println!("LOG: {:?}",x.additional_fields.log);
+    println!("first: {:?}",x.edges.first().unwrap().cursor);
+    println!("last: {:?}",x.edges.last().unwrap().cursor);
+    
     assert_eq!(x.edges.len(), 55);
     assert!(!x.has_next_page);
     assert!(!x.has_previous_page);

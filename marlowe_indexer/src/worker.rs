@@ -3,9 +3,9 @@ use marlowe_lang::{types::marlowe::{MarloweDatum, PossiblyMerkleizedInput}, plut
 use cardano_chain_sync::{ChainSyncEvent, ChainSyncBlock};
 use opentelemetry::KeyValue;
 use pallas::ledger::addresses::Address;
-use pallas_primitives::{Fragment, babbage::{PlutusV2Script, Metadatum}};
+use pallas_primitives::Fragment;
 use pallas_traverse::{MultiEraTx, OriginalHash, MultiEraOutput};
-use tracing::{info, info_span, Instrument, warn, trace};
+use tracing::{info,  warn, trace};
 use crate::state::{State, SlotId, MarloweTransition, Contract, OutputReference};
 
 use cardano_chain_sync::pallas_network_ccs as pallas_network;
@@ -124,7 +124,7 @@ impl MarloweSyncWorker {
                         .get(consumed_contract_index).expect(&format!("marlowe-indexer bug: broken contract reference for {:?}",transaction.hash()));
                     
                     // directly access last element as we can clearly only consume the last known utxo in the chain
-                    let consumed_utxo = consumed_contract.transitions.last().expect(&format!("Found transaction {:?} that consumes an utxo from a contract, but failed to find that utxo in the contract via utxo lookup table. This is a bug in marlowe-indexer.",transaction.hash()));;
+                    let consumed_utxo = consumed_contract.transitions.last().expect(&format!("Found transaction {:?} that consumes an utxo from a contract, but failed to find that utxo in the contract via utxo lookup table. This is a bug in marlowe-indexer.",transaction.hash()));
 
                     // some basic checks just to prove that our logic always holds                    
                     if consumed_utxo.tx_id == format!("{consumed_tx_hash}#{consumed_utxo_index}") {
@@ -187,7 +187,7 @@ impl MarloweSyncWorker {
 
         if consumed_from_marlowe_address.len() == 1 {
 
-            let (consumed_utxo,consumed_id,consumed_short_id,_consumed_transition_item,contract_index,index_of_input_in_this_tx) = 
+            let (_consumed_utxo,consumed_id,consumed_short_id,_consumed_transition_item,contract_index,index_of_input_in_this_tx) = 
                 consumed_from_marlowe_address.first().unwrap().to_owned();
             
             consumed_from_contract_id = Some(consumed_id.clone());
@@ -195,10 +195,7 @@ impl MarloweSyncWorker {
             if out_to_marlowe.is_empty() {
                 trace!("Contract {:?} was closed by tx {:?}",&consumed_from_contract_id,transaction.hash().to_string());
             }
-            
-            let c = consumed_from_marlowe_address.first().unwrap();
-            
-            
+
             if let Some(redeemers) = transaction.redeemers() {
                 
                 let redeemer_plutus_data = &redeemers.iter().find(|r|r.index as usize ==index_of_input_in_this_tx)
@@ -209,12 +206,12 @@ impl MarloweSyncWorker {
                 let mut de_merk_conts: std::collections::HashMap<String,marlowe_lang::types::marlowe::Contract> = std::collections::HashMap::new();
                 let mut marlowe_redeemers = vec![];
                 
-                let mut original_redeemer_bytes : Option<Vec<u8>> = Some(b.clone());
+                let original_redeemer_bytes : Option<Vec<u8>> = Some(b.clone());
 
                 // EXTRACT REDEEMERS AND POSSIBLY MERKLE CONTINUATIONS
                 match marlowe_lang::plutus_data::from_bytes(&b) {
                     Ok(pd) => {
-                        match Vec::<PossiblyMerkleizedInput>::from_plutus_data(pd, &vec![]) {
+                        match Vec::<PossiblyMerkleizedInput>::from_plutus_data(pd, &[]) {
                             Ok(red) => {
                                 marlowe_redeemers = red.clone();
                                 for x in &red {
@@ -227,11 +224,11 @@ impl MarloweSyncWorker {
 
                                             if let Some(demerk) = matching_datum {
                                                 
-                                                let pd = marlowe_lang::plutus_data::from_bytes(&demerk.raw_cbor())
+                                                let pd = marlowe_lang::plutus_data::from_bytes(demerk.raw_cbor())
                                                     .expect("should always be possible to decode plutus data");
 
                                                 let decoded_contract = 
-                                                    marlowe_lang::types::marlowe::Contract::from_plutus_data(pd, &vec![])
+                                                    marlowe_lang::types::marlowe::Contract::from_plutus_data(pd, &[])
                                                         .expect("marlowe-rs bug: should always be possible to decode continuations since they already were successfully used on-chain.");
 
                                                 de_merk_conts.insert(demerk.original_hash().to_string(),decoded_contract);
@@ -316,7 +313,7 @@ impl MarloweSyncWorker {
                     block_num : block.number() as f64,
                     //tx_index: tx_index as f64,
                     block: block.hash().to_string(),
-                    datum: datum,
+                    datum,
                     datum_hash,
                     inputs: Some(marlowe_redeemers),
                     tx_id: transaction.hash().to_string(),
@@ -330,7 +327,7 @@ impl MarloweSyncWorker {
                     continuations: de_merk_conts,
                     validity_range: (vis,ttl),
                     original_plutus_datum_bytes: original_datum_bytes,
-                    original_redeemer_bytes: original_redeemer_bytes
+                    original_redeemer_bytes
                 };
             
              
@@ -364,7 +361,7 @@ impl MarloweSyncWorker {
                         let pd = marlowe_lang::plutus_data::from_bytes(x).expect("marlowe-rs bug: the transaction is recorded on chain and must therefore be valid plutus data");
 
                         let deserialized_datum = 
-                            marlowe_lang::types::marlowe::MarloweDatum::from_plutus_data(pd,&vec![])
+                            marlowe_lang::types::marlowe::MarloweDatum::from_plutus_data(pd,&[])
                                 .expect("marlowe-rs bug: the transaction is recorded on chain and must therefore be a valid marlowe datum.");
 
                         previous_transition.datum = Some(deserialized_datum);
@@ -541,7 +538,7 @@ impl MarloweSyncWorker {
             }
 
             if !consumed_from_marlowe_address.is_empty() {
-                for (_consumed_utxo,id,_short_id,consumed_transition_item,_contract_index,index_of_consumed_input) in consumed_from_marlowe_address {
+                for (_consumed_utxo,id,_short_id,consumed_transition_item,_contract_index,_index_of_consumed_input) in consumed_from_marlowe_address {
                     tracing::debug!("tx {:?} consumes utxo {}#{} (from the tx chain of {:?})",transaction.hash(),consumed_transition_item.tx_id,consumed_transition_item.utxo_index.expect("any transition that is consumed must have an utxo_index"),id);                        
                 }
             }
@@ -587,7 +584,7 @@ fn read_marlowe_info_from_utxo(o:&MultiEraOutput,datums:&[&pallas::codec::utils:
                         match pd {
                             Ok(d) => {
                                 let hash = datum_hash.to_string();
-                                Ok(MarloweDatumRes::Raw(hash,MarloweDatum::from_plutus_data(d, &vec![])?,bytes))       
+                                Ok(MarloweDatumRes::Raw(hash,MarloweDatum::from_plutus_data(d, &[])?,bytes))       
                             },
                             Err(e) => {
                                 warn!("failed to deserialize datum. error: {:?}",e);

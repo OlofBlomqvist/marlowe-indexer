@@ -1,14 +1,11 @@
 use async_graphql::*;
 
-use marlowe_lang::{semantics::ContractSemantics, plutus_data::FromPlutusData};
-use tokio::task::yield_now;
-use tracing::info;
-use async_graphql::{
-    connection::{Connection, Edge},
-    Result
-};
 
-use crate::state::{Contract, OrderedContracts};
+
+
+
+
+
 
 pub struct QueryRoot;
 
@@ -202,7 +199,7 @@ pub struct ExpectedInputActions {
 
 
 
-
+#[allow(unused)]
 pub struct SlotConfig {
     pub zero_time: u64,
     pub zero_slot: u64,

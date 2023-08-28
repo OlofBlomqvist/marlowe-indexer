@@ -4,7 +4,6 @@ pub use core::fmt;
 pub mod configuration;
 
 use configuration::Configuration;
-use error_stack::IntoReport;
 use pallas_network::miniprotocols::chainsync::NextResponse;
 use pallas_traverse::MultiEraBlock;
 use tracing::trace;
@@ -67,7 +66,7 @@ impl CardanoChainSync {
                 pallas_network::facades::NodeClient::connect(
                     &self.configuration.address, 
                     self.configuration.magic
-                ).await.into_report()
+                ).await.map_err(Report::from)
                     .change_context_lazy(||
                         ChainSyncError::new(&format!("Failed to connect to {} (using magic: {})",
                         &self.configuration.address,
@@ -83,7 +82,7 @@ impl CardanoChainSync {
                         info!("Failed to located point. Tip is: {:?}",t)
                     }
                     Err(e) => {
-                        return Err(e).into_report().change_context(ChainSyncError::new("failed to find intersect point"))
+                        return Err(e).map_err(Report::from).change_context(ChainSyncError::new("failed to find intersect point"))
                     }
                 }  
                 info!("Socket connection successfully established!");
@@ -96,7 +95,7 @@ impl CardanoChainSync {
                     pallas_network::facades::PeerClient::connect(
                         &self.configuration.address, 
                         self.configuration.magic
-                    ).await.into_report()
+                    ).await.map_err(Report::from)
                         .change_context_lazy(||
                             ChainSyncError::new(&format!("Failed to connect to {} (using magic: {})",
                             &self.configuration.address,
@@ -111,7 +110,7 @@ impl CardanoChainSync {
                         info!("Failed to located point. Tip is: {:?}",t)
                     }
                     Err(e) => {
-                        return Err(e).into_report().change_context(ChainSyncError::new("failed to find intersect point"))
+                        return Err(e).map_err(Report::from).change_context(ChainSyncError::new("failed to find intersect point"))
                     }
                 }    
                 self.client = Some(Client::TcpClient(client));
@@ -189,7 +188,7 @@ impl CardanoChainSync {
                             let bytes = x.blockfetch()
                                 .fetch_single(Point::Specific(slot, hash.to_vec()))
                                 .await
-                                .into_report().change_context(ChainSyncError::new("no block! not cool!"))?.to_vec();
+                                .map_err(Report::from).change_context(ChainSyncError::new("no block! not cool!"))?.to_vec();
                             Ok(ChainSyncEvent::Block(ChainSyncBlock { bytes: bytes.to_vec() }, tip.clone()))
                         },
                         Some(Client::SocketClient(_x)) => todo!()
@@ -225,7 +224,7 @@ impl CardanoChainSync {
                 
                 match next {
                     NextResponse::RollForward(cbor, tip) => {
-                        let block = MultiEraBlock::decode(cbor).into_report().change_context(ChainSyncError::new("failed to find intersect point"))?;
+                        let block = MultiEraBlock::decode(cbor).map_err(Report::from).change_context(ChainSyncError::new("failed to find intersect point"))?;
                             
                         let slot = block.slot();
                         let hash = block.hash();
@@ -256,7 +255,7 @@ impl CardanoChainSync {
     pub async fn next(&mut self) ->  Result<(),Report<ChainSyncError>> {
         
         match &mut self.client {
-            None => Err(ChainSyncError::new("Not connected.")).into_report(),
+            None => Err(ChainSyncError::new("Not connected.")).map_err(Report::from),
             Some(Client::SocketClient(node_client)) => {
                 
                 let chain_sync = node_client.chainsync();
@@ -264,12 +263,12 @@ impl CardanoChainSync {
                 
                 match chain_sync.has_agency() {
                     true => {
-                        let next = chain_sync.request_next().await.into_report().change_context(ChainSyncError::new("not cool"))?;
+                        let next = chain_sync.request_next().await.map_err(Report::from).change_context(ChainSyncError::new("not cool"))?;
                         e = Some(self.handle_sync_response(SyncBlock::N2C(&next)).await?);
                     }
                     false => {
                         trace!("awaiting next block (blocking)");
-                        let next = chain_sync.recv_while_must_reply().await.into_report().change_context(ChainSyncError::new("not cool"))?;
+                        let next = chain_sync.recv_while_must_reply().await.map_err(Report::from).change_context(ChainSyncError::new("not cool"))?;
                         
                         e = Some(self.handle_sync_response(SyncBlock::N2C(&next)).await?);
                     }
@@ -289,11 +288,11 @@ impl CardanoChainSync {
                 let e : Option<ChainSyncEvent>;
                 
                 if must_await {
-                    let next = &peer_client.chainsync().recv_while_must_reply().await.into_report().change_context(ChainSyncError::new("not cool"))?;
+                    let next = &peer_client.chainsync().recv_while_must_reply().await.map_err(Report::from).change_context(ChainSyncError::new("not cool"))?;
                   
                     e = Some(self.handle_sync_response(SyncBlock::N2N(next)).await?);
                 } else {
-                    let next = &peer_client.chainsync().request_next().await.into_report().change_context(ChainSyncError::new("not cool"))?;
+                    let next = &peer_client.chainsync().request_next().await.map_err(Report::from).change_context(ChainSyncError::new("not cool"))?;
                     e = Some(self.handle_sync_response(SyncBlock::N2N(next)).await?);
                 }   
                              
