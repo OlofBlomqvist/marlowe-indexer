@@ -605,8 +605,8 @@ impl MarloweSyncWorker {
                 }
             }
 
+            #[cfg(feature="debug")]
             if !consumed_from_marlowe_address.is_empty() {
-                
                 for (_consumed_utxo,id,_short_id,consumed_transition_item,_contract_index,_index_of_consumed_input) in consumed_from_marlowe_address {
                     tracing::debug!("tx {:?} consumes utxo {}#{} (from the tx chain of {:?})",transaction.hash(),consumed_transition_item.tx_id,consumed_transition_item.utxo_index.expect("any transition that is consumed must have an utxo_index"),id);                        
                 }

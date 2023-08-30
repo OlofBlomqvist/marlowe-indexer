@@ -1,7 +1,3 @@
-
-
-
-
 use async_graphql::SimpleObject;
 
 use tokio::time::Duration;

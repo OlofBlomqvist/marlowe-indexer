@@ -8,7 +8,7 @@ use cardano_chain_sync::{*, configuration::ConfigurationBuilder};
 use clap::Parser;
 use opentelemetry::sdk::{Resource, trace::XrayIdGenerator};
 use tracing::Level;
-use tracing_subscriber::{FmtSubscriber, fmt::{format::FmtSpan, self}, EnvFilter, filter::LevelFilter};
+use tracing_subscriber::{FmtSubscriber, fmt::{format::FmtSpan, self}, filter::LevelFilter};
 use anyhow::{Result, anyhow};
 use warp::{http::Response as HttpResponse, Rejection};
 use crate::worker::MarloweSyncWorker;

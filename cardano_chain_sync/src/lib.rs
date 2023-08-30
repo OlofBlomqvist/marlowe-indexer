@@ -354,7 +354,9 @@ impl CardanoChainSync {
                         
                     }
                     NextResponse::Await => {
+
                         trace!("chain-sync reached the tip of the chain");
+                        
                         Ok(ChainSyncEvent::Noop)
                     }
                 }
