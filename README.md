@@ -5,7 +5,7 @@
 An indexer for Marlowe smart contracts on the Cardano blockchain.
 Exposes indexed data via graphql.
 
-Current state of this repository: very early POC/Demo implementation
+Current state of this repository: Early alpha/poc phase
 
 **NOT YET READY FOR PRODUCTION USE**
 
@@ -31,9 +31,21 @@ Current state of this repository: very early POC/Demo implementation
 
 1. Make sure you have Rust installed: https://www.rust-lang.org/tools/install
 2. Clone the repository
-3. Run the application with host:port network: 
-    ```
-    cargo run 192.168.1.122:3001 preprod # mainnet/preprod/preview 
+3. Run the application using one of the following ways: 
+    ```powershell
+    
+    # Connect to a local node (defaults to CARDANO_NODE_SOCKET_PATH)
+    cargo run socket-sync --network=preprod
+
+    # Connect to a local node with specified path
+    cargo run socket-sync --network=preprod -- "\\.\pipe\cardano-node-preprod"
+
+    # Connect to a random remote node
+    cargo run tcp-sync --network=preprod
+
+    # Connect to a specific remote node
+    cargo run tcp-sync --network=preprod -- 192.168.1.122:3000
+
     ```
 4. Open localhost:8000 in a browser
 
@@ -49,17 +61,7 @@ Current state of this repository: very early POC/Demo implementation
 - GraphQL subscriptions (with filtering)
 - Stabilize structure of stored data (what to store about each contract and how)
 
-# Known hacks/flaws
-
-- Rollbacks are not at all something that has been given any attention yet and may be completely broken.
-
 # Code quality
 
 - Initially during POC, shortcuts will be taken..
 - Will be improved greatly before V1 release.
-
-# When V1 ?
-
-This is a side-project, so possibly never..
-
-

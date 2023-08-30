@@ -1,1 +1,1 @@
-cargo run --features="debug" -- --log-level info --network preprod --mode socket --address "\\.\pipe\cardano-node-preprod"
+cargo run socket-sync --network=preprod
