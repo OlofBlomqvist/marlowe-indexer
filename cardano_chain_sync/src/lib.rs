@@ -55,7 +55,10 @@ impl CardanoChainSync {
             return Ok(())
         }        
         
-        let mut known_points : Vec<pallas_network::miniprotocols::Point> = 
+        // In some cases like mainnet,preprod,testnet we already have known intersect points
+        // to use as we know there are no marlowe contracts earlier than that, but for others
+        // like sanchonet - we start at the origin.
+        let known_points : Vec<pallas_network::miniprotocols::Point> = 
             if let Some(point) = &self.intersect {
                 vec![point.clone()]
             } else {
@@ -77,6 +80,8 @@ impl CardanoChainSync {
                     .attach_printable_lazy(||"Is the address correct? Is the node running & online?")?;
                             
                 if known_points.is_empty() {
+
+                    // Connect chainsync at origin
                     info!("No intersect point set for this network, fetching origin..");
                     let origin = 
                         client
@@ -90,21 +95,24 @@ impl CardanoChainSync {
                             .attach_printable_lazy(||"Failed to find origin!")?;
 
                     let origin_slot = origin.slot_or_default();
-                    known_points.push(origin);
                     info!("Origin received: {:?}",origin_slot);
 
+                } else {
+
+                    // Connect chain sync at specific point
+                    match client.chainsync().find_intersect(known_points).await {
+                        Ok((Some(p),_t)) => {
+                            info!("Located specific point: {:?}",p)
+                        },
+                        Ok((None,t)) => {
+                            info!("Failed to located point. Tip is: {:?}",t)
+                        }
+                        Err(e) => {
+                            return Err(e).map_err(Report::from).change_context(ChainSyncError::new("failed to find intersect point"))
+                        }
+                    }  
                 }
-                match client.chainsync().find_intersect(known_points).await {
-                    Ok((Some(p),_t)) => {
-                        info!("Located specific point: {:?}",p)
-                    },
-                    Ok((None,t)) => {
-                        info!("Failed to located point. Tip is: {:?}",t)
-                    }
-                    Err(e) => {
-                        return Err(e).map_err(Report::from).change_context(ChainSyncError::new("failed to find intersect point"))
-                    }
-                }  
+
                 info!("Socket connection successfully established!");
                 self.client = Some(Client::SocketClient(client));
      
@@ -122,19 +130,43 @@ impl CardanoChainSync {
                             &self.configuration.magic)))
                         .attach_printable_lazy(||"Is the address correct? Is the node running & online?")?;
 
-                match client.chainsync().find_intersect(known_points).await {
-                    Ok((Some(p),_t)) => {
-                        info!("Located specific point: {:?}",p)
-                    },
-                    Ok((None,t)) => {
-                        info!("Failed to located point. Tip is: {:?}",t)
-                    }
-                    Err(e) => {
-                        return Err(e).map_err(Report::from).change_context(ChainSyncError::new("failed to find intersect point"))
-                    }
-                }    
-                self.client = Some(Client::TcpClient(client));
+                if known_points.is_empty() {
+                    
+                    // Connect chainsync at origin
+                    info!("No intersect point set for this network, fetching origin..");
+                    let origin = 
+                        client
+                            .chainsync()
+                            .intersect_origin().await
+                            .map_err(Report::from)
+                            .change_context_lazy(||
+                                ChainSyncError::new(&format!("Failed to fetch origin from {} (using magic: {})",
+                                &self.configuration.address,
+                                &self.configuration.magic)))
+                            .attach_printable_lazy(||"Failed to find origin!")?;
+
+                    let origin_slot = origin.slot_or_default();
+                    
+                    info!("Origin received: {:?}",origin_slot);
+
+                } else {
+                    // Connect at intersect point
+                    match client.chainsync().find_intersect(known_points).await {
+                        Ok((Some(p),_t)) => {
+                            info!("Located specific point: {:?}",p)
+                        },
+                        Ok((None,t)) => {
+                            info!("Failed to located point. Tip is: {:?}",t)
+                        }
+                        Err(e) => {
+                            return Err(e).map_err(Report::from).change_context(ChainSyncError::new("failed to find intersect point"))
+                        }
+                    }    
+                    
+                }
+
                 info!("TCP connection successfully established!");
+                self.client = Some(Client::TcpClient(client));
       
             }
         }
@@ -198,20 +230,17 @@ impl CardanoChainSync {
 
                     let header = to_traverse(header).unwrap();
                     
-                    let slot = header.slot();
-                    let hash = header.hash();
-                    
                     match &mut self.client {
                         None => Err(Report::new(ChainSyncError::Message("CardanoChainSync bug: no client".into()))),
                         Some(Client::TcpClient(x)) => {
-                            let block_point: miniprotocols::Point = pallas_network::miniprotocols::Point::Specific(slot, hash.to_vec());
+                            let point_of_this_block: miniprotocols::Point = pallas_network::miniprotocols::Point::Specific(header.slot(), header.hash().to_vec());
                             let bytes = x.blockfetch()
-                                .fetch_single(block_point.clone())
+                                .fetch_single(point_of_this_block.clone())
                                 .await
                                 .map_err(Report::from).change_context(ChainSyncError::new("no block!!"))?.to_vec();
 
                              // save the last successfully processed slot/block as intersect in case we get disconnected.
-                            self.intersect =  Some(block_point);
+                            self.intersect =  Some(point_of_this_block);
                             Ok(ChainSyncEvent::Block(ChainSyncBlock { bytes: bytes.to_vec() }, tip.clone()))
 
                         },
@@ -221,9 +250,7 @@ impl CardanoChainSync {
     
                 }
                 NextResponse::RollBackward(point, tip) => {
-                    
-                    let abs_slot_to_roll_back_to = point.slot_or_default();
-                    
+                                        
                     match &point {
                         Point::Origin => {
 
@@ -234,30 +261,32 @@ impl CardanoChainSync {
                             self.intersect = self.stored_original_intersect.clone();
 
                             Ok(ChainSyncEvent::Rollback { 
-                                abs_slot_to_go_back_to: abs_slot_to_roll_back_to , 
+                                abs_slot_to_go_back_to: point.slot_or_default() , 
                                 tip: tip.clone()
                             })
                         }
                         Point::Specific(
-                            block_num, 
+                            abs_slot_to_roll_back_to, 
                             block_hash
                         ) => {
 
                             if let Some(old_intersect) = &self.intersect {
+                                
                                 let old_abs_slot = old_intersect.slot_or_default();
-                                if old_abs_slot < abs_slot_to_roll_back_to {
+
+                                if old_abs_slot < *abs_slot_to_roll_back_to {
                                     panic!("old intersect is lower than rollback: {} < {}",old_abs_slot,abs_slot_to_roll_back_to)
                                 }
                             }
 
                             self.intersect = Some(point.clone());
 
-                            warn!("Rollback to slot '{abs_slot_to_roll_back_to}', block_num: {block_num}, block hash: {}",
+                            warn!("Rollback to slot '{abs_slot_to_roll_back_to}', block hash: {}",
                                 hex::encode(block_hash),
                             );
 
                             Ok(ChainSyncEvent::Rollback { 
-                                abs_slot_to_go_back_to: abs_slot_to_roll_back_to, 
+                                abs_slot_to_go_back_to: *abs_slot_to_roll_back_to, 
                                 tip: tip.clone()
                             })
                         }
@@ -297,7 +326,7 @@ impl CardanoChainSync {
                                 info!("Rollback to origin");
                                 Ok(ChainSyncEvent::Rollback { abs_slot_to_go_back_to:point.slot_or_default(), tip: tip.clone()})
                             },
-                            Point::Specific(block_num, block_hash) => {
+                            Point::Specific(block_abs_slot, block_hash) => {
                                 
                                 if let Some(old_intersect) = &self.intersect {
                                     let old_abs_slot = old_intersect.slot_or_default();
@@ -308,7 +337,7 @@ impl CardanoChainSync {
     
                                 self.intersect = Some(point.clone());
     
-                                warn!("Rollback to slot '{abs_slot_to_roll_back_to}', block_num: {block_num}, block hash: {}",
+                                warn!("Rollback to slot '{block_abs_slot}', block hash: {}",
                                     hex::encode(block_hash),
                                 );
     
