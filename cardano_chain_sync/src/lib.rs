@@ -166,6 +166,9 @@ impl CardanoChainSync {
                 }
 
                 info!("TCP connection successfully established!");
+                
+                warn!("Using TCP is often slower than socket connections");
+
                 self.client = Some(Client::TcpClient(client));
       
             }
@@ -211,8 +214,8 @@ impl CardanoChainSync {
                 // attempt to reconnect..
                 self.client = None;
                 match self.connect().await {
-                    Ok(_) => println!("RE-CONNECTED!"),
-                    Err(e) => println!("{e:?}"),
+                    Ok(_) => info!("RE-CONNECTED!"),
+                    Err(e) => error!("{e:?}"),
                 }
             }
         }

@@ -7,7 +7,8 @@ use args::{NodeToConnect, NetworkArg};
 use cardano_chain_sync::{*, configuration::ConfigurationBuilder};
 use clap::Parser;
 use opentelemetry::sdk::{Resource, trace::XrayIdGenerator};
-use tracing_subscriber::{FmtSubscriber, fmt::{format::FmtSpan, self}};
+use tracing::Level;
+use tracing_subscriber::{FmtSubscriber, fmt::{format::FmtSpan, self}, EnvFilter, filter::LevelFilter};
 use anyhow::{Result, anyhow};
 use warp::{http::Response as HttpResponse, Rejection};
 use crate::worker::MarloweSyncWorker;
@@ -27,17 +28,47 @@ macro_rules! any_err {
     ($expr:expr) => (anyhow::Context::with_context($expr.map_err(|e| anyhow!("{:?}", e)), ||concat!("@ ", file!(), " line ", line!(), " column ", column!())))}
 
 
-    pub async fn init_logging(level:&str,mut otel_tracing_endpoint:Option<String>) -> Result<()> {
+    pub async fn init_logging(level:Level,mut otel_tracing_endpoint:Option<String>) -> Result<()> {
 
-
-        env_logger::Builder::from_env(
-            env_logger::Env::new().default_filter_or(level)
-        ).init();
+        let (hyper_level,warp_level,pallas_level) = match &level {
+            &Level::TRACE => (
+                "hyper=debug".parse().unwrap(),
+                "warp=trace".parse().unwrap(),
+                "pallas_network=debug".parse().unwrap()
+            ),
+            &Level::DEBUG => (
+                "hyper=info".parse().unwrap(),
+                "warp=info".parse().unwrap(),
+                "pallas_network=info".parse().unwrap()
+            ),
+            &Level::INFO => (
+                "hyper=warn".parse().unwrap(),
+                "warp=info".parse().unwrap(),
+                "pallas_network=warn".parse().unwrap()
+            ),
+            &Level::WARN => (
+                "hyper=warn".parse().unwrap(),
+                "warp=warn".parse().unwrap(),
+                "pallas_network=warn".parse().unwrap()
+            ),
+            &Level::ERROR => (
+                "hyper=error".parse().unwrap(),
+                "warp=error".parse().unwrap(),
+                "pallas_network=error".parse().unwrap()
+            ),
+        };
+        
+        let env_filter = 
+            tracing_subscriber::EnvFilter::new(LevelFilter::from_level(level).to_string())
+                .add_directive(pallas_level)
+                .add_directive(warp_level)
+                .add_directive(hyper_level);
+                
 
         if otel_tracing_endpoint.is_none() {
             match std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
                 Ok(endpoint) => {
-                    println!(">>> ENV:OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: {} ::: ", endpoint);
+                    //println!(">>> ENV:OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: {} ::: ", endpoint);
                     otel_tracing_endpoint = Some(endpoint);
                 },
                 _ => {},
@@ -56,12 +87,6 @@ macro_rules! any_err {
                 _ => {}
             }
         }
-
-
-        let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(tracing::log::LevelFilter::Info.as_str()))
-            .add_directive("pallas_network=warn".parse().unwrap());
-            
 
         if let Some(otel_addr) = &otel_tracing_endpoint {
             
@@ -92,7 +117,8 @@ macro_rules! any_err {
                 .with_exception_fields(true)
                 .with_exception_field_propagation(true)
                 .with_location(true);
-
+            
+            
             let combo_subscriber = Registry::default()
                 .with(env_filter)
                 .with(otel_layer)
@@ -166,10 +192,13 @@ mod args;
 async fn main() -> Result<()> {
     
     let opt = crate::args::Opt::parse();
+
     let log_level = match opt.log_level {
-        args::LogLevel::Verbose => "verbose",
-        args::LogLevel::Info => "info",
-        args::LogLevel::Warn => "warn",
+        args::LogLevel::Debug => tracing::Level::DEBUG.into(),
+        args::LogLevel::Info => tracing::Level::INFO.into(),
+        args::LogLevel::Warn => tracing::Level::WARN.into(),
+        args::LogLevel::Trace => tracing::Level::TRACE.into(),
+        args::LogLevel::Error => tracing::Level::ERROR.into(),    
     };
 
     init_logging(log_level,opt.otel_trace_endpoint).await?;

@@ -147,7 +147,7 @@ pub(crate) async fn contracts_query_base(contracts: &OrderedContracts, params: Q
                 return Err(QueryError::InvalidPagination)
             }
             let l = selected_first.min(x_filtered_items.len() as i32) as usize;
-            println!("Selected first {selected_first} resulted in slice: [..{}]", l);
+            //println!("Selected first {selected_first} resulted in slice: [..{}]", l);
             &x_filtered_items[0..l]
         },
 
