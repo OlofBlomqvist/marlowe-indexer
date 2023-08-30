@@ -37,8 +37,8 @@ impl ConfigurationBuilder {
         self.magic = Some(value);
         self
     }
-    pub fn with_address(mut self,value:String) -> Self {
-        self.address = Some(value);
+    pub fn with_address(mut self,value:&str) -> Self {
+        self.address = Some(value.to_string());
         self
     }
 

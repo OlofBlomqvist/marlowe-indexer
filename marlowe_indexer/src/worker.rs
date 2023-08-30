@@ -5,7 +5,7 @@ use opentelemetry::KeyValue;
 use pallas::ledger::addresses::Address;
 use pallas_primitives::Fragment;
 use pallas_traverse::{MultiEraTx, OriginalHash, MultiEraOutput};
-use tracing::{info,  warn, info_span, Instrument};
+use tracing::{info,  warn, info_span, Instrument, trace_span};
 use crate::state::{State, SlotId, MarloweTransition, Contract, OutputReference};
 
 use cardano_chain_sync::pallas_network_ccs as pallas_network;
@@ -45,29 +45,39 @@ impl crate::ChainSyncReceiver for MarloweSyncWorker {
                 let txs = decoded.txs();
                 let tx_iter = txs.iter().enumerate();
                 let txcount = txs.len();
-
+                let block_num = decoded.number();
                 
-                let span = info_span!("handling block", tx_count = txcount, block_hash = &decoded.hash().to_string(), block_num = &decoded.number().to_string());
-               
+                let span = info_span!("handling block", tx_count = txcount, block_hash = &decoded.hash().to_string(), block_num = &block_num.to_string());
+                        
+                let current_slot = decoded.slot();
+                
+                
                 for (i,t) in tx_iter {
                     self.apply_transaction(
                         i,
-                        decoded.slot(), 
+                        current_slot, 
                         t,
                         b,
                     ).instrument(span.clone()).await; 
                 }        
+
+                
+                {
+                    let mut state_accessor = self.state.write().await;
+                    state_accessor.index_tip_abs_slot = Some(current_slot);                    
+                    state_accessor.tip_abs_slot = Some(self.tip.0.slot_or_default());
+                }
                 
             }
             
-            cardano_chain_sync::ChainSyncEvent::Rollback { block_slot,tip} => {
+            cardano_chain_sync::ChainSyncEvent::Rollback { abs_slot_to_go_back_to,tip} => {
                 self.tip = tip.clone();
 
-                let span = info_span!("rollback", rollback_to_block_slot = block_slot);
+                let span = info_span!("rollback", rollback_to_block_slot = abs_slot_to_go_back_to);
                 let _guard = span.enter();
 
                 self.rollback(
-                    *block_slot
+                    *abs_slot_to_go_back_to
                 ).await;
             }
 
@@ -84,12 +94,7 @@ impl MarloweSyncWorker {
     //#[tracing::instrument(skip_all,fields(block_num=tracing::field::Empty,level="debug"))]
     //let span = tracing::info_span!("handle_new_block",block_id = tracing::field::Empty);
     pub async fn apply_transaction<'a>(&mut self, tx_index:usize, slot:SlotId,transaction:&MultiEraTx<'a>,block:&ChainSyncBlock) {
-        
-        {
-            let mut state_accessor = self.state.write().await;
-            state_accessor.last_block_slot = Some(slot);
-            state_accessor.last_block_hash = Some(block.decode().unwrap().hash());
-        }
+       
 
         let mut consumed_from_contract_id : Option<String> = None;
 
@@ -228,10 +233,13 @@ impl MarloweSyncWorker {
                     .expect("because this transaction consumes an utxo from the marlowe validator, there MUST be a redeemer here.").data;
 
                 let b = redeemer_plutus_data.encode_fragment().unwrap();
-                let mut issues = vec![];
-                let mut de_merk_conts: std::collections::HashMap<String,marlowe_lang::types::marlowe::Contract> = std::collections::HashMap::new();
+                
+                let mut de_merk_conts: std::collections::HashMap<String,marlowe_lang::types::marlowe::Contract> = 
+                    std::collections::HashMap::new();
+
                 let mut marlowe_redeemers = vec![];
                 
+                #[cfg(feature="debug")]
                 let original_redeemer_bytes : Option<Vec<u8>> = Some(b.clone());
 
                 // EXTRACT REDEEMERS AND POSSIBLY MERKLE CONTINUATIONS
@@ -240,11 +248,11 @@ impl MarloweSyncWorker {
                         match Vec::<PossiblyMerkleizedInput>::from_plutus_data(pd, &[]) {
                             Ok(red) => {
                                 marlowe_redeemers = red.clone();
+
                                 for x in &red {
                                     match &x {
                                         PossiblyMerkleizedInput::MerkleizedInput(_a, merkle_hash_cont) => {
-
-                                                                            
+             
                                             let matching_datum = 
                                                 datums.iter().find(|x|x.original_hash().to_string() == *merkle_hash_cont);
 
@@ -258,6 +266,7 @@ impl MarloweSyncWorker {
                                                         .expect("marlowe-rs bug: should always be possible to decode continuations since they already were successfully used on-chain.");
 
                                                 de_merk_conts.insert(demerk.original_hash().to_string(),decoded_contract);
+
                                             } else {
                                                 panic!("marlowe-indexer bug: we found a transaction that consumes a marlowe utxo using a merkleized input, but the tx does not include the continuation contract.")
                                             }
@@ -267,12 +276,12 @@ impl MarloweSyncWorker {
                                 }
                             },
                             Err(e) => {
-                                issues.push(format!("failed to decode redeemer from plutus data! {}",e));
+                                warn!("failed to decode redeemer from plutus data! {}",e);
                             },
                         }
                     },
                     Err(e) => {
-                        issues.push(format!("failed to decode redeemer plutus data!! Because the tx exists and consumes data from marlowe, the redeemer must be valid. if you see this, marlowe-indexer or marlowe-rs has a bug.. {e:?}"));
+                        warn!("failed to decode redeemer plutus data!! Because the tx exists and consumes data from marlowe, the redeemer must be valid. if you see this, marlowe-indexer or marlowe-rs has a bug.. {e:?}");
                     }
                 };
 
@@ -281,7 +290,7 @@ impl MarloweSyncWorker {
                 }
 
                 // in case of a tx closing the contract, there does not need to be a datum
-                let (datum_hash, datum,utxo_id,original_datum_bytes) = 
+                let (datum_hash, datum,utxo_id,_original_datum_bytes) = 
                     if let Some(o) = out_to_marlowe.first() { 
                         let rr = read_marlowe_info_from_utxo(&o.1,&datums) ;
                         match rr {
@@ -295,7 +304,7 @@ impl MarloweSyncWorker {
                                 
                             },
                             Err(rrr) => {
-                                issues.push(rrr.clone());
+                                tracing::error!("Failed to read marlowe datum from utxo: {}. This is most likely a bug in marlowe-indexer or marlowe-rs.",rrr);
                                 (None, None , Some(o.0 as f64), None)
                             },
                         }
@@ -306,14 +315,14 @@ impl MarloweSyncWorker {
                 stepped = stepped + 1;
                 span.record("initialized_contracts", stepped);
                 span.in_scope(||{
-                    tracing::info!("TX {} causes a transition within contract {consumed_short_id}",transaction.hash().to_string());
+                    tracing::debug!("TX {} causes a transition within contract {consumed_short_id}",transaction.hash().to_string());
                 });
 
                 let mut rw_state_accessor = self.state.write().await;
                 let contract = rw_state_accessor.ordered_contracts.get_mut(&consumed_short_id).unwrap();         
 
                 // obviously this contract is valid because this tx moves it.
-                // therefore we dont need to check marlowe_scan - we know it existts.
+                // therefore we dont need to check marlowe_scan - we know it exists.
                 let marlowe_scan_status = None; 
                 
 
@@ -328,6 +337,7 @@ impl MarloweSyncWorker {
                     _ => None
                 };
 
+                #[cfg(feature="debug")]
                 let (vis,ttl) = {
                     match transaction.as_alonzo() {
                         None => match transaction.as_babbage() {
@@ -341,7 +351,6 @@ impl MarloweSyncWorker {
 
                 let new_transition = MarloweTransition {
                     block_num : block.number() as f64,
-                    //tx_index: tx_index as f64,
                     block: block.hash().to_string(),
                     datum,
                     datum_hash,
@@ -350,14 +359,17 @@ impl MarloweSyncWorker {
                     utxo_index: utxo_id,
                     abs_slot: slot as f64,
                     end: out_to_marlowe.is_empty(),
-                    invalid: !issues.is_empty(),
-                    issues,
                     marlowe_scan_status,
                     meta,
-                    continuations: de_merk_conts,
-                    validity_range: (vis,ttl),
-                    original_plutus_datum_bytes: original_datum_bytes,
-                    original_redeemer_bytes
+                    
+
+                    // ------- for debug feature ------------------------------------------------
+                    #[cfg(feature="debug")] continuations: de_merk_conts,
+                    #[cfg(feature="debug")] validity_range: (vis,ttl),
+                    #[cfg(feature="debug")] original_plutus_datum_bytes: _original_datum_bytes,
+                    #[cfg(feature="debug")] original_redeemer_bytes
+                    // --------------------------------------------------------------------------
+
                 };
             
              
@@ -450,42 +462,56 @@ impl MarloweSyncWorker {
                         d.raw_cbor()
                     );
                 }
-                
+
+                let mut potentially_has_issues = false;
                 for (i,o,validator_hash) in &out_to_marlowe {
                     
-                    let mut issues = vec![];
-
-                    let (datum_hash,marlowe_datum,original_datum_bytes) = match read_marlowe_info_from_utxo(o,&tx_datums) {
+                    let (datum_hash,marlowe_datum,_original_datum_bytes) = match read_marlowe_info_from_utxo(o,&tx_datums) {
                         Ok(MarloweDatumRes::Hash(h)) => {
                             (Some(h),None,None)
                         }, 
                         Ok(MarloweDatumRes::Raw(hash,v,ob)) => (Some(hash),Some(v),Some(ob)),
                         Err(e) => {
-                            issues.push(e);
+                            potentially_has_issues = true;
+                            tracing::debug!("failed to read marlowe info from utxo: {e}");
                             (None,None,None)
                         },
                     };
 
+                    let cid = transaction.hash().to_string();
+
                     if datum_hash.is_none() {
+                        tracing::debug!("This tx does not even have a datum hash attached, so we will ignore it. {}",&cid);
                         continue // this cannot be an initial contract since it has no datum nor any datum hash
                     }
 
-                                   
-                    let cid = transaction.hash().to_string();
+
                     let block_num = block.number();
                     
                     
                     let bid = format!("{}{}{}",block_num,tx_index,i);
                     let short_id = bs58::encode(&bid).into_string();           
                     
-
-                    let marlowe_scan_status = if !issues.is_empty() {
-                        let ms = get_marlowe_scan_preprod_status(&cid, *i).await;
+                    // This is a new utxo that was added to the marlowe address but we failed to decode it.
+                    // We will attempt to see if marlowe scan has successfully indexed it.
+                    let marlowe_scan_status = if potentially_has_issues {
+                        
+                        let span = trace_span!("test-marlowe-scan-status");
+                        
+                        let ms = 
+                            get_marlowe_scan_preprod_status(&cid, *i)
+                            .instrument(span.clone()).await;
                         match ms {
                             Ok(v) => {
+                                if v.is_success() {
+                                    tracing::error!("Detected a contract that we could not index, but that is indexed by marlowescan.org. This is likely a bug with marlowe-rs or marlowe-indexer.  ({}#{i})", transaction.hash().to_string() )
+                                } else {
+                                    tracing::debug!("We found an utxo on the validator address which could not be decoded, but we have now validated it against marlowe scan, and they also do not index this contract.");
+                                }
                                 Some(v.as_str().to_string())
                             },
                             Err(e) => {
+                                tracing::error!("We were unable to reach marlowe scan to test if this contract is indexed there. If this contract is valid and any transaction later consumes it, marlowe-indexer will crash. ");
                                 Some(format!("{e:?}"))
                             }
                         }
@@ -504,6 +530,7 @@ impl MarloweSyncWorker {
                         _ => None
                     };
 
+                    #[cfg(feature="debug")]
                     let (vis,ttl) = {
                         match transaction.as_alonzo() {
                             None => match transaction.as_babbage() {
@@ -532,14 +559,18 @@ impl MarloweSyncWorker {
                                     utxo_index: Some(*i as f64),
                                     abs_slot: slot as f64,
                                     end: false,
-                                    invalid: !issues.is_empty(),
-                                    issues,
                                     marlowe_scan_status,
                                     meta,
-                                    continuations: std::collections::HashMap::new(),
-                                    validity_range: (vis,ttl),
-                                    original_plutus_datum_bytes: original_datum_bytes,
-                                    original_redeemer_bytes: None
+                                    
+                                    
+
+                                    // ------- for debug feature ------------------------------------------------
+                                    #[cfg(feature="debug")] continuations: std::collections::HashMap::new(),
+                                    #[cfg(feature="debug")] validity_range: (vis,ttl),
+                                    #[cfg(feature="debug")] original_plutus_datum_bytes: _original_datum_bytes,
+                                    #[cfg(feature="debug")] original_redeemer_bytes: None
+                                    // --------------------------------------------------------------------------
+                                    
                                 }
                             ]
                         };
@@ -586,14 +617,14 @@ impl MarloweSyncWorker {
     }
 
     // todo: this needs to be properly implemented and tested
-    #[tracing::instrument(level="warn")]
-    pub async fn rollback<'a>(&mut self,  block_slot: SlotId) -> bool {
+    #[tracing::instrument(level="warn",skip(self))]
+    pub async fn rollback<'a>(&mut self,  abs_slot_to_go_back_to: SlotId) -> bool {
         let mut state_accessor = self.state.write().await;
-        if state_accessor.last_block_slot.is_some() {
-            warn!("Rolling back everything from slot id {:?} to {}",state_accessor.last_block_slot,block_slot);
+        if state_accessor.index_tip_abs_slot.is_some() {
+            warn!("Rolling back everything from slot id {:?} to {}",state_accessor.index_tip_abs_slot,abs_slot_to_go_back_to);
         }
-        state_accessor.last_block_slot = Some(block_slot);
-        state_accessor.ordered_contracts.rollback(block_slot as f64);
+        state_accessor.index_tip_abs_slot = Some(abs_slot_to_go_back_to);
+        state_accessor.ordered_contracts.rollback(abs_slot_to_go_back_to as f64);
 
         true
     }
@@ -605,13 +636,12 @@ pub enum MarloweDatumRes {
     Hash(String),
     Raw(String,marlowe_lang::types::marlowe::MarloweDatum,Vec<u8>)
 }
+
 fn read_marlowe_info_from_utxo(o:&MultiEraOutput,datums:&[&pallas::codec::utils::KeepRaw<'_, pallas_primitives::babbage::PlutusData>]) -> Result<MarloweDatumRes,String> {
     match o.datum() {
         Some(x) => {
             match x {
                 pallas_primitives::babbage::PseudoDatumOption::Hash(datum_hash) => {
-                    
-                    
 
                     let matching_datum = 
                         datums.iter().find(|x|x.original_hash() == datum_hash);

@@ -4,6 +4,7 @@ pub use core::fmt;
 pub mod configuration;
 
 use configuration::Configuration;
+use pallas_network::miniprotocols::Point;
 use pallas_network::miniprotocols::chainsync::NextResponse;
 use pallas_traverse::MultiEraBlock;
 use tracing::trace;
@@ -27,8 +28,9 @@ pub struct CardanoChainSync {
     pub client : Option<Client>,
     pub configuration: Configuration,
     pub worker: Box<(dyn ChainSyncReceiver + Send)>,
-    pub intersect : Option<(u64,Vec<u8>)>,
-    pub connection_type : ConnectionType
+    pub intersect : Option<pallas_network::miniprotocols::Point>,
+    pub connection_type : ConnectionType,
+    stored_original_intersect : Option<pallas_network::miniprotocols::Point>
 }
 
 
@@ -53,9 +55,9 @@ impl CardanoChainSync {
             return Ok(())
         }        
         
-        let known_points : Vec<Point> = 
+        let mut known_points : Vec<pallas_network::miniprotocols::Point> = 
             if let Some(point) = &self.intersect {
-                vec![Point::new(point.0, point.1.clone())]
+                vec![point.clone()]
             } else {
                 vec![]
             };
@@ -74,7 +76,24 @@ impl CardanoChainSync {
                         &self.configuration.magic)))
                     .attach_printable_lazy(||"Is the address correct? Is the node running & online?")?;
                             
-                
+                if known_points.is_empty() {
+                    info!("No intersect point set for this network, fetching origin..");
+                    let origin = 
+                        client
+                            .chainsync()
+                            .intersect_origin().await
+                            .map_err(Report::from)
+                            .change_context_lazy(||
+                                ChainSyncError::new(&format!("Failed to fetch origin from {} (using magic: {})",
+                                &self.configuration.address,
+                                &self.configuration.magic)))
+                            .attach_printable_lazy(||"Failed to find origin!")?;
+
+                    let origin_slot = origin.slot_or_default();
+                    known_points.push(origin);
+                    info!("Origin received: {:?}",origin_slot);
+
+                }
                 match client.chainsync().find_intersect(known_points).await {
                     Ok((Some(p),_t)) => {
                         info!("Located specific point: {:?}",p)
@@ -125,13 +144,15 @@ impl CardanoChainSync {
         Ok(())
     }
 
-    pub fn new(configuration:Configuration, worker: Box<dyn ChainSyncReceiver + Send>, intersect: (u64,Vec<u8>), connection_type: ConnectionType) -> Self {
+    pub fn new(configuration:Configuration, worker: Box<dyn ChainSyncReceiver + Send>, intersect: Option<pallas_network::miniprotocols::Point>, connection_type: ConnectionType) -> Self {
         CardanoChainSync { 
             configuration ,
             client: None,
             worker,
-            intersect: Some(intersect.clone()),
-            connection_type
+            intersect: intersect.clone(),
+            connection_type,
+            // store this to prevent rollback to origin from going further back
+            stored_original_intersect: intersect
         }
     }
 
@@ -176,44 +197,75 @@ impl CardanoChainSync {
                 NextResponse::RollForward(header, tip) => {
 
                     let header = to_traverse(header).unwrap();
+                    
                     let slot = header.slot();
                     let hash = header.hash();
-                    
-                    self.intersect =  Some((slot,hash.to_vec()));
                     
                     match &mut self.client {
                         None => Err(Report::new(ChainSyncError::Message("CardanoChainSync bug: no client".into()))),
                         Some(Client::TcpClient(x)) => {
+                            let block_point: miniprotocols::Point = pallas_network::miniprotocols::Point::Specific(slot, hash.to_vec());
                             let bytes = x.blockfetch()
-                                .fetch_single(Point::Specific(slot, hash.to_vec()))
+                                .fetch_single(block_point.clone())
                                 .await
-                                .map_err(Report::from).change_context(ChainSyncError::new("no block! not cool!"))?.to_vec();
+                                .map_err(Report::from).change_context(ChainSyncError::new("no block!!"))?.to_vec();
+
+                             // save the last successfully processed slot/block as intersect in case we get disconnected.
+                            self.intersect =  Some(block_point);
                             Ok(ChainSyncEvent::Block(ChainSyncBlock { bytes: bytes.to_vec() }, tip.clone()))
+
                         },
                         Some(Client::SocketClient(_x)) => todo!()
-                    }
+                    }                  
+
     
                 }
-                NextResponse::RollBackward(point, _tip) => {
-    
-                    match point {
+                NextResponse::RollBackward(point, tip) => {
+                    
+                    let abs_slot_to_roll_back_to = point.slot_or_default();
+                    
+                    match &point {
                         Point::Origin => {
-                            debug!("Rollback to origin");
-                            Ok(ChainSyncEvent::Rollback { block_slot:0, tip: _tip.clone()})
+
+                            info!("Rollback to origin");
+                            
+                            // we will refuse to go back further than the original intersect
+                            // since we know for a fact there cannot have been marlowe contracts earlier than that
+                            self.intersect = self.stored_original_intersect.clone();
+
+                            Ok(ChainSyncEvent::Rollback { 
+                                abs_slot_to_go_back_to: abs_slot_to_roll_back_to , 
+                                tip: tip.clone()
+                            })
                         }
                         Point::Specific(
-                            block_slot, 
+                            block_num, 
                             block_hash
                         ) => {
-                            self.intersect = Some((*block_slot,block_hash.clone()));
-                            debug!("rollback to block '{:?}', slot: {}",block_hash,block_slot);
-                            Ok(ChainSyncEvent::Rollback { block_slot:point.slot_or_default(), tip: _tip.clone()})
+
+                            if let Some(old_intersect) = &self.intersect {
+                                let old_abs_slot = old_intersect.slot_or_default();
+                                if old_abs_slot < abs_slot_to_roll_back_to {
+                                    panic!("old intersect is lower than rollback: {} < {}",old_abs_slot,abs_slot_to_roll_back_to)
+                                }
+                            }
+
+                            self.intersect = Some(point.clone());
+
+                            warn!("Rollback to slot '{abs_slot_to_roll_back_to}', block_num: {block_num}, block hash: {}",
+                                hex::encode(block_hash),
+                            );
+
+                            Ok(ChainSyncEvent::Rollback { 
+                                abs_slot_to_go_back_to: abs_slot_to_roll_back_to, 
+                                tip: tip.clone()
+                            })
                         }
                     }
     
                 }
                 chainsync::NextResponse::Await => {
-                    tracing::trace!("chain-sync reached the tip of the chain. waiting for new data..");
+                    tracing::debug!("chain-sync reached the tip of the chain. waiting for new data..");
                     Ok(ChainSyncEvent::Noop)
                 }
             },
@@ -227,23 +279,50 @@ impl CardanoChainSync {
                             
                         let slot = block.slot();
                         let hash = block.hash();
-                        self.intersect =  Some((slot,hash.to_vec()));
+                        
+                        let block_point: miniprotocols::Point = pallas_network::miniprotocols::Point::Specific(slot, hash.to_vec());
+
+                        self.intersect =  Some(block_point);
 
                         Ok(ChainSyncEvent::Block(ChainSyncBlock { bytes: cbor.0.clone() }, tip.clone()))
                     }
                     NextResponse::RollBackward(point, tip) => {
-                        match &point {
-                            Point::Origin => debug!("Rollback to origin"),
-                            Point::Specific(slot, hash) => {
-                                self.intersect = Some((*slot,hash.clone()));
-                                debug!("Rollback to slot {slot}")
-                            },
-                        };
                         
-                        Ok(ChainSyncEvent::Rollback { block_slot:point.slot_or_default(), tip: tip.clone()})
+                        let abs_slot_to_roll_back_to = point.slot_or_default();
+
+                        match &point {
+                            Point::Origin => {
+
+                                self.intersect = self.stored_original_intersect.clone();
+                                info!("Rollback to origin");
+                                Ok(ChainSyncEvent::Rollback { abs_slot_to_go_back_to:point.slot_or_default(), tip: tip.clone()})
+                            },
+                            Point::Specific(block_num, block_hash) => {
+                                
+                                if let Some(old_intersect) = &self.intersect {
+                                    let old_abs_slot = old_intersect.slot_or_default();
+                                    if old_abs_slot < abs_slot_to_roll_back_to {
+                                        panic!("old intersect is lower than rollback: {} < {}",old_abs_slot,abs_slot_to_roll_back_to)
+                                    }
+                                }
+    
+                                self.intersect = Some(point.clone());
+    
+                                warn!("Rollback to slot '{abs_slot_to_roll_back_to}', block_num: {block_num}, block hash: {}",
+                                    hex::encode(block_hash),
+                                );
+    
+                                Ok(ChainSyncEvent::Rollback { 
+                                    abs_slot_to_go_back_to: abs_slot_to_roll_back_to, 
+                                    tip: tip.clone()
+                                })
+                            },
+                        }
+                        
+                        
                     }
                     NextResponse::Await => {
-                        info!("chain-sync reached the tip of the chain");
+                        trace!("chain-sync reached the tip of the chain");
                         Ok(ChainSyncEvent::Noop)
                     }
                 }
@@ -338,7 +417,7 @@ pub struct ChainSyncBlock {
 #[derive(Debug)]
 pub enum ChainSyncEvent {
     Block(ChainSyncBlock,pallas_network::miniprotocols::chainsync::Tip),
-    Rollback { block_slot:u64, tip:pallas_network::miniprotocols::chainsync::Tip},
+    Rollback { abs_slot_to_go_back_to:u64, tip:pallas_network::miniprotocols::chainsync::Tip},
     Noop
 }
 

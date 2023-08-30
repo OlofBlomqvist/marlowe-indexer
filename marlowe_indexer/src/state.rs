@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use pallas_primitives::byron::BlockId;
 
 #[derive(Debug,PartialEq,Hash,Eq)]
 pub(crate) struct OutputReference { pub tx_hash: String, pub output_index : u64 }
@@ -143,6 +142,7 @@ pub struct Contract {
 #[derive(Debug,Clone)]
 pub struct MarloweTransition {
 
+    #[cfg(feature="debug")]
     pub validity_range: (Option<u64>,Option<u64>),
 
     pub tx_id : String, // index of the tx which created this utxo
@@ -151,6 +151,8 @@ pub struct MarloweTransition {
     pub utxo_index : Option<f64>, 
 
     /// This is true if there can not be any more transitions after this one.
+    /// It signifies that the transaction causing this transition did not output any new
+    /// utxo to the marlowe validator address, effectively ending the contract's utxo chain.
     pub end : bool,
 
     /// Slot number in which this transition occurred
@@ -162,12 +164,6 @@ pub struct MarloweTransition {
     // Number of the block in which this transition occurred
     pub block_num : f64,
 
-    // Invalid contracts are filtered out by default when querying
-    pub invalid : bool,
-
-    // List of issues found when processing the transaction that caused this transition
-    pub issues : Vec<String>,
-
     // TEMP
     pub marlowe_scan_status: Option<String>,
 
@@ -178,15 +174,15 @@ pub struct MarloweTransition {
     
     pub meta : Option<String>,
 
-    // For contracts that use merkleized continuations, this property will be populated when 
-    // a transition uses merkleized inputs
-    pub continuations : std::collections::HashMap<String,marlowe_lang::types::marlowe::Contract>,
+    // For contracts that use merkleized continuations, this property will be populated when a transition uses merkleized inputs. 
+    // Todo: wipe intermediate continuations
+    #[cfg(feature="debug")] pub continuations : std::collections::HashMap<String,marlowe_lang::types::marlowe::Contract>,
 
     // -- Original data so we can validate that marlowe-rs gets to the same result after applying inputs
     // -- These are optional because merkleized contracts and transactions that use datum-hash rather than inline datums
     // -- will not have them available until the utxo is consumed.
-    pub original_plutus_datum_bytes : Option<Vec<u8>>,
-    pub original_redeemer_bytes : Option<Vec<u8>>
+    #[cfg(feature="debug")] pub original_plutus_datum_bytes : Option<Vec<u8>>, // for memory reasons, we ONLY index these when using the debug feature
+    #[cfg(feature="debug")] pub original_redeemer_bytes : Option<Vec<u8>>      // for memory reasons, we ONLY index these when using the debug feature
 }
 
 
@@ -195,21 +191,21 @@ pub struct MarloweTransition {
 #[derive(Debug)]
 pub struct State {
     pub(crate) ordered_contracts: OrderedContracts,
-    pub (crate) last_block_slot: Option<SlotId>,
-    pub (crate) last_block_hash: Option<BlockId>,
-
-    // TODO : add tip info and such ?
+    pub (crate) index_tip_abs_slot: Option<SlotId>,
+    pub (crate) tip_abs_slot: Option<SlotId>,
+    pub (crate) allow_graphql_without_full_sync : bool
 }
 
 impl State {
-    pub fn last_seen_block(&self) -> &Option<BlockId> {
-        &self.last_block_hash
+    pub fn last_seen_block(&self) -> &Option<SlotId> {
+        &self.index_tip_abs_slot
     }
-    pub fn new() -> Self {
+    pub fn new(allow_graphql_without_full_sync:bool) -> Self {
         State {
+            allow_graphql_without_full_sync,
             ordered_contracts : OrderedContracts::new(),
-            last_block_slot: None,
-            last_block_hash: None
+            index_tip_abs_slot: None,
+            tip_abs_slot: None
         }
     }
 }

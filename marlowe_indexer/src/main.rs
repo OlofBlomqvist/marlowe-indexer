@@ -3,6 +3,7 @@
 #![feature(async_closure)]
 
 use std::sync::Arc;
+use args::{NodeToConnect, NetworkArg};
 use cardano_chain_sync::{*, configuration::ConfigurationBuilder};
 use clap::Parser;
 use opentelemetry::sdk::{Resource, trace::XrayIdGenerator};
@@ -33,8 +34,6 @@ macro_rules! any_err {
             env_logger::Env::new().default_filter_or(level)
         ).init();
 
-        println!("Initializing logging ..");
-        
         if otel_tracing_endpoint.is_none() {
             match std::env::var("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT") {
                 Ok(endpoint) => {
@@ -142,6 +141,7 @@ async fn graphql_handler(
     
 
     tracing::info!("Got request from {}",src_ip);
+
     let schema = graphql::create_schema();
     let schema = 
         Schema::build(graphql::types::QueryRoot, EmptyMutation, crate::graphql::types::SubscriptionRoot)
@@ -153,7 +153,9 @@ async fn graphql_handler(
     let query_string = json_value["query"].as_str().unwrap_or("");
     let request = async_graphql::Request::new(query_string);
     let response = schema.execute(request).await;
-    Ok(warp::reply::json(&response))
+    let response_json = warp::reply::json(&response);
+
+    Ok(warp::reply::with_status(response_json,reqwest::StatusCode::OK))
 }
 
 
@@ -170,7 +172,7 @@ async fn main() -> Result<()> {
         args::LogLevel::Warn => "warn",
     };
 
-    init_logging(log_level,opt.otel_endpoint).await?;
+    init_logging(log_level,opt.otel_trace_endpoint).await?;
 
     let span = tracing::error_span!("MAIN");
     span.entered().in_scope(||{
@@ -180,29 +182,29 @@ async fn main() -> Result<()> {
     });
     
 
-    let configuration = 
-        match opt.network {
-            crate::args::Network::Preprod => {
-                any_err!(ConfigurationBuilder::new()
-                    .with_magic(pallas_network::miniprotocols::PRE_PRODUCTION_MAGIC)
-                    .with_address(opt.address)
+    let configuration = match &opt.node_connection {
+        NodeToConnect::SocketSync { socket_path, network } => {
+            let magic = get_magic(&network)?;
+            let path = socket_path.clone().unwrap_or(std::env::var("CARDANO_NODE_SOCKET_PATH")?);
+            tracing::info!("Connecting to socket '{path}' using network magic '{magic}'");
+            any_err!(ConfigurationBuilder::new()
+                    .with_magic(magic)
+                    .with_address(&path)
                     .build())?
-            },
-            crate::args::Network::Mainnet => {
-                any_err!(ConfigurationBuilder::new()
-                    .with_magic(pallas_network::miniprotocols::MAINNET_MAGIC)
-                    .with_address(opt.address)
-                    .build())?
-            },
-            crate::args::Network::Preview => {
-                any_err!(ConfigurationBuilder::new()
-                    .with_magic(pallas_network::miniprotocols::PREVIEW_MAGIC)
-                    .with_address(opt.address)
-                    .build())?
-            }
-        };
-        
-    let shared_state = state::State::new();
+
+        }
+        NodeToConnect::TcpSync { address, network } => {
+            let magic = get_magic(&network)?;
+            let path = address.clone().unwrap_or(resolve_addr(&network).await?);
+            tracing::info!("Connecting to address '{path}' using network magic '{magic}'");
+            any_err!(ConfigurationBuilder::new()
+                   .with_magic(magic)
+                   .with_address(&path)
+                   .build())?
+        }
+    };
+
+    let shared_state = state::State::new(opt.force_enable_graphql);
     let locked_share = tokio::sync::RwLock::new(shared_state);
     let shared_state_arc = Arc::new(locked_share);
     
@@ -212,13 +214,13 @@ async fn main() -> Result<()> {
         match configuration.magic 
         {
             pallas_network::miniprotocols::PRE_PRODUCTION_MAGIC => 
-                (10847427,hex::decode("4194504ed513bedd432301f17738c8cc8c07eb9f5d58d673316344533fabfc23").unwrap()),
-                //(20652041,hex::decode("bd64380360adae03158b2641e17bd2a0d74e018c3598002a3ada7bb8c4dfc1b4").unwrap()), // much later TEMP TEMP TEMP dont use this, use the one above
+                Some(pallas_network::miniprotocols::Point::new(10847427,hex::decode("4194504ed513bedd432301f17738c8cc8c07eb9f5d58d673316344533fabfc23").unwrap())),
             pallas_network::miniprotocols::MAINNET_MAGIC => 
-                (72748995,hex::decode("d86e9f41a81d4e372d9255a07856c46e9026d2eabe847d5404da2bbe5fb7f3c1").unwrap()),
+                Some(pallas_network::miniprotocols::Point::new(72748995,hex::decode("d86e9f41a81d4e372d9255a07856c46e9026d2eabe847d5404da2bbe5fb7f3c1").unwrap())),
             pallas_network::miniprotocols::PREVIEW_MAGIC => 
-                (832495,hex::decode("641697acd9478e6aaafbdc6f08046ddc758df741d232342c87e2f26025286277").unwrap()),
-            _ => panic!()
+                Some(pallas_network::miniprotocols::Point::new(832495,hex::decode("641697acd9478e6aaafbdc6f08046ddc758df741d232342c87e2f26025286277").unwrap())),
+            _ => 
+                None
         };
 
         
@@ -229,7 +231,7 @@ async fn main() -> Result<()> {
                 configuration,
                 marlowe_worker,
                 intersect,
-                if let crate::args::Mode::Socket = opt.mode { 
+                if let crate::args::NodeToConnect::SocketSync { socket_path:_, network :_} = opt.node_connection  { 
                     ConnectionType::Socket 
                 } else { 
                     ConnectionType::Tcp 
@@ -300,7 +302,8 @@ async fn main() -> Result<()> {
             ))
         }).with(warp::trace::request());
 
-    let warp_task = tokio::spawn(warp::serve(routes).run(([0, 0, 0, 0], 8000)));
+
+    let warp_task = tokio::spawn(warp::serve(routes).run(([0, 0, 0, 0], opt.graphql_listen_port)));
     
     _ = tokio::try_join!(warp_task,worker_task);
     
@@ -310,4 +313,82 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
+
+
+
+pub enum AutoResolvedConnectionAddress{
+    SocketFromEnvironment(String),
+    TCPDefaultForNetwork(String)
+}
+
+#[derive(serde::Deserialize)]
+struct ProducerInfo {
+
+    #[serde(alias = "Addr")]
+    pub addr : String,
+
+    #[serde(alias = "Port")]
+    #[allow(dead_code)] pub port : u16,
+
+    #[serde(alias = "Continent")]
+    #[allow(dead_code)] pub continent : Option<String>
+}
+
+#[derive(serde::Deserialize)]
+struct TopologyData {
+    #[serde(alias = "Producers")]
+    pub producers : Vec<ProducerInfo>
+}
+
+#[tracing::instrument]
+async fn resolve_addr(network_name:&NetworkArg) -> anyhow::Result<String> {
+
+    let url = match network_name {
+
+        NetworkArg::Mainnet => 
+            // "https://explorer.mainnet.cardano.org/relays/topology.json", 
+            "https://raw.githubusercontent.com/input-output-hk/cardano-configurations/master/network/mainnet/cardano-node/topology.json",
+        
+        NetworkArg::Preview => 
+            "https://raw.githubusercontent.com/input-output-hk/cardano-configurations/master/network/preview/cardano-node/topology.json",
+        
+        NetworkArg::Preprod =>
+            "https://raw.githubusercontent.com/input-output-hk/cardano-configurations/master/network/preprod/cardano-node/topology.json",
+        
+        NetworkArg::Sanchonet => 
+            "https://raw.githubusercontent.com/input-output-hk/cardano-configurations/master/network/sanchonet/cardano-node/topology.json",
+
+    };
+
+    tracing::info!("fetching topology.json from {}",&url);
+    let result = reqwest::get(url).await.map_err(anyhow::Error::new)?;
+
+    if !&result.status().is_success() {
+        return Err(anyhow::Error::msg(format!("Failed to fetch topology from {url}. Status code: {:?}",result.status())))
+    }
+
+    let body = result.text().await?;
+   
+    let decoded_data : TopologyData = serde_json::de::from_str(&body)?;
+    
+    if let Some(p) = decoded_data.producers.first() {
+        Ok(format!("{}:{}",p.addr,p.port))
+    } else {
+        Err(anyhow::Error::msg(format!("Found no producers in the response from {url}")))
+    }
+    
+    
+} 
+
+#[tracing::instrument]
+pub fn get_magic(network:&crate::args::NetworkArg) -> Result<u64> {
+    match network {
+        crate::args::NetworkArg::Mainnet => Ok(pallas_network::miniprotocols::MAINNET_MAGIC),
+        crate::args::NetworkArg::Preview => Ok(pallas_network::miniprotocols::PREVIEW_MAGIC),
+        crate::args::NetworkArg::Preprod => Ok(pallas_network::miniprotocols::PRE_PRODUCTION_MAGIC),
+        crate::args::NetworkArg::Sanchonet=> Ok(4)
+    }
+    
+}
+
 

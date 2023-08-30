@@ -1,41 +1,57 @@
 use async_graphql::*;
 
-
-
-
-
-
-
-
 pub struct QueryRoot;
 
 #[derive(InputObject,Default,Debug)]
 pub struct ContractsFilter {
 
+    /// The transaction hash and output index (hash#i) of the tx that created the contract
     pub id : Option<StringFilter>,
 
     /// Custom cursor id used by marlowe-indexer, based on block,tx and utxo position on chain, converted to base58.
     pub short_id : Option<StringFilter>,
 
-    pub has_issues : Option<bool>,
-
+    /// NOTE: This filter is only available because the debug feature is active
+    #[cfg(feature="debug")] pub has_issues : Option<bool>,
     pub account_state: Option<LockedAmountFilter>,
     
+    /// The contract is fully closed: no further transitions are possible.
     pub is_closed: Option<bool>,
 
-    // https://preprod.cardanoscan.io/transaction/1280b3e947b8501ea6504dd9b5698f175f7d7b228aea1c960ad17817352ed9d1?tab=metadata#1
-    pub meta: Option<StringFilter>,
+    /// Filter by meta data attached to any tx of a contract
+    pub meta_data: Option<StringFilter>,
 
     pub validator_hash: Option<StringFilter>,
 
+    /// NOTE: This filter is only available because the debug feature is active
     #[cfg(feature="debug")]
     pub marlowe_rs_status: Option<StringFilter>,
 
     /// Filter by number of bound values in current state
-    pub bound_values: Option<NumFilter>,
+    pub number_of_bound_values: Option<NumFilter>,
 
+    /// NOTE: This filter is only available because the debug feature is active
     #[cfg(feature="debug")]
-    pub datum: Option<StringFilter>
+    pub datum: Option<StringFilter>,
+
+
+    // ----- TODO : ADD SUPPORT FOR THESE--------------------------------------------
+
+    /// NOTE: This filter is not yet implemented.
+    pub uses_merkleization : Option<bool>,
+
+    /// NOTE: This filter is not yet implemented.
+    /// >> Find all contracts that this tx affected
+    pub tx_id: Option<StringFilter>,
+
+    /// NOTE: This filter is not yet implemented.
+    pub role_token: Option<Vec<StringFilter>>,
+
+    /// NOTE: This filter is not yet implemented.
+    pub role_policy: Option<StringFilter>,
+
+    /// NOTE: This filter is not yet implemented.
+    pub participant_address: Option<Vec<StringFilter>>
 
 
 }
@@ -163,6 +179,7 @@ pub struct MarlowePayee {
     pub typ : MarlowePartyType,
     pub value : String
 }
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct MarloweParty {
     pub typ : MarlowePartyType,
@@ -196,8 +213,6 @@ pub struct ExpectedInputActions {
     pub choices : Vec<ExpectedChoice>,
     pub notifications : Vec<ExpectedNotification>
 }
-
-
 
 #[allow(unused)]
 pub struct SlotConfig {

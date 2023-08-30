@@ -39,7 +39,7 @@ async fn test_valid_filter() {
         ..Default::default()
     });
     
-    let result = crate::graphql::query::testable_query(&contracts,QueryParams {
+    let result = crate::graphql::query::contracts_query_base(&contracts,QueryParams {
         filter,
         ..Default::default()
     }).await;
@@ -51,7 +51,7 @@ async fn test_valid_filter() {
 async fn test_pagination_after_and_first() {
     let contracts = setup_ordered_contracts(55);
 
-    let result = crate::graphql::query::testable_query(&contracts,QueryParams {
+    let result = crate::graphql::query::contracts_query_base(&contracts,QueryParams {
         after: Some("short_20".to_string()),
         first: Some(5),
         ..Default::default()
@@ -82,7 +82,7 @@ async fn test_pagination_after_and_first() {
 async fn test_pagination_before_and_last() {
     let contracts = setup_ordered_contracts(55);
 
-    let result = crate::graphql::query::testable_query(&contracts,QueryParams {
+    let result = crate::graphql::query::contracts_query_base(&contracts,QueryParams {
         before: Some("short_20".to_string()),
         last: Some(5),
         ..Default::default()
@@ -116,7 +116,7 @@ async fn test_filter_by_id() {
         ..Default::default()
     });
 
-    let result = crate::graphql::query::testable_query(&contracts,QueryParams {
+    let result = crate::graphql::query::contracts_query_base(&contracts,QueryParams {
         filter,
         ..Default::default()
     }).await;
@@ -137,7 +137,7 @@ async fn test_filter_by_id() {
 async fn test_invalid_before_arg() {
     let contracts = setup_ordered_contracts(50);
 
-    let result = crate::graphql::query::testable_query(&contracts,QueryParams {
+    let result = crate::graphql::query::contracts_query_base(&contracts,QueryParams {
         before: Some("short_1000".to_string()),  // This does not exist
         ..Default::default()
     }).await;
@@ -151,7 +151,7 @@ async fn test_invalid_before_arg() {
 async fn test_invalid_after_arg() {
     let contracts = setup_ordered_contracts(50);
 
-    let result = crate::graphql::query::testable_query(&contracts,QueryParams {
+    let result = crate::graphql::query::contracts_query_base(&contracts,QueryParams {
         after: Some("short_1000".to_string()),
         ..Default::default()
     }).await;
@@ -168,7 +168,7 @@ async fn test_no_results_filter() {
         ..Default::default()
     });
 
-    let result = crate::graphql::query::testable_query(&contracts, QueryParams { filter, ..Default::default() }).await;
+    let result = crate::graphql::query::contracts_query_base(&contracts, QueryParams { filter, ..Default::default() }).await;
     match result {
         Ok(_) => panic!("should not yield any results"),
         Err(e) => assert_eq!(crate::graphql::query::QueryError::NoResult,e),
@@ -179,7 +179,7 @@ async fn test_no_results_filter() {
 async fn test_negative_first_value() {
     let contracts = setup_ordered_contracts(50);
 
-    let result = crate::graphql::query::testable_query(&contracts, QueryParams { first: Some(-5), ..Default::default() }).await;
+    let result = crate::graphql::query::contracts_query_base(&contracts, QueryParams { first: Some(-5), ..Default::default() }).await;
 
     assert!(result.is_err());
     assert_eq!(result.err().unwrap(), crate::graphql::query::QueryError::InvalidPagination); // assuming you have this error type
@@ -195,7 +195,7 @@ async fn test_multiple_filters() {
         ..Default::default()
     });
 
-    let result = crate::graphql::query::testable_query(&contracts, QueryParams { filter, ..Default::default() }).await;
+    let result = crate::graphql::query::contracts_query_base(&contracts, QueryParams { filter, ..Default::default() }).await;
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap().edges.len(), 1);
@@ -205,7 +205,7 @@ async fn test_multiple_filters() {
 async fn test_max_results() {
     let contracts = setup_ordered_contracts(50);
 
-    let result = crate::graphql::query::testable_query(&contracts, QueryParams { first: Some(100), ..Default::default() }).await;
+    let result = crate::graphql::query::contracts_query_base(&contracts, QueryParams { first: Some(100), ..Default::default() }).await;
 
     assert!(result.is_ok());
     assert_eq!(result.unwrap().edges.len(), 50); // assuming 50 is the maximum
@@ -215,7 +215,7 @@ async fn test_max_results() {
 async fn test_ordered_results() {
     let contracts = setup_ordered_contracts(50);
 
-    let result = crate::graphql::query::testable_query(&contracts, QueryParams { ..Default::default() }).await;
+    let result = crate::graphql::query::contracts_query_base(&contracts, QueryParams { ..Default::default() }).await;
 
     assert!(result.is_ok());
     let edges = result.unwrap().edges;
@@ -231,7 +231,7 @@ async fn test_ordered_results() {
 async fn test_overlap_of_before_and_after() {
     let contracts = setup_ordered_contracts(50);
 
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams {
             before: Some("short_20".to_string()),
             after: Some("short_15".to_string()),
@@ -248,7 +248,7 @@ async fn test_overlap_of_before_and_after() {
 #[tokio::test]
 async fn test_no_contracts() {
     let contracts = setup_ordered_contracts(0);
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams { ..Default::default() }).await;
     match result {
         Ok(_) => panic!("should not yield any results"),
@@ -264,7 +264,7 @@ async fn test_filter_non_existent_value() {
         ..Default::default()
 
     });
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams { filter, ..Default::default() }).await;
         match result {
             Ok(_) => panic!("should not yield any results"),
@@ -280,7 +280,7 @@ async fn test_multiple_different_filters() {
         short_id: Some(StringFilter::Eq("short_26".to_string())),
         ..Default::default()
     });
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams { filter, ..Default::default() }).await;
     match result {
         Ok(_) => panic!("should not yield any results"),
@@ -292,7 +292,7 @@ async fn test_multiple_different_filters() {
 #[tokio::test]
 async fn test_has_next_page_false_at_end() {
     let contracts = setup_ordered_contracts(50);
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams {..Default::default() }).await;
     assert!(result.is_ok());
     assert!(!result.unwrap().has_next_page);
@@ -301,7 +301,7 @@ async fn test_has_next_page_false_at_end() {
 #[tokio::test]
 async fn test_has_previous_page_true() {
     let contracts = setup_ordered_contracts(500);
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams { page:Some(4.0), ..Default::default() }).await;
     assert!(result.is_ok());
     let r = result.unwrap();
@@ -321,7 +321,7 @@ async fn test_has_previous_page_true() {
 #[tokio::test]
 async fn test_has_previous_page_false_at_start() {
     let contracts = setup_ordered_contracts(50);
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams { first: Some(50), ..Default::default() }).await;
     assert!(result.is_ok());
     assert!(!result.unwrap().has_previous_page);
@@ -331,7 +331,7 @@ async fn test_has_previous_page_false_at_start() {
 #[tokio::test]
 async fn test_invalid_combination_first_and_last() {
     let contracts = setup_ordered_contracts(50);
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams { 
             first: Some(5), 
             last: Some(5), 
@@ -346,7 +346,7 @@ async fn test_full_page() {
     
     let contracts = setup_ordered_contracts(150);
 
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams { page: Some(2.0), ..Default::default() }).await;
 
     if let Err(e) = &result {
@@ -370,7 +370,7 @@ async fn test_full_page() {
 #[tokio::test]
 async fn test_partial_page() {
     let contracts = setup_ordered_contracts(55);
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams { page:Some(1.0), first: Some(55), ..Default::default() }).await;
     assert!(result.is_ok());
     let x = result.unwrap();
@@ -386,7 +386,7 @@ async fn test_partial_page() {
 #[tokio::test]
 async fn test_partial_page_using_latest() {
     let contracts = setup_ordered_contracts(55);
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams { last: Some(55), ..Default::default() }).await;
     assert!(result.is_ok());
     let x = result.unwrap();
@@ -406,7 +406,7 @@ async fn test_partial_page_using_latest() {
 #[tokio::test]
 async fn test_partial_page_with_specific_page_size() {
     let contracts = setup_ordered_contracts(55);
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams { first: Some(55), page_size: Some(55), ..Default::default() }).await;
     assert!(result.is_ok());
     let x = result.unwrap();
@@ -423,7 +423,7 @@ async fn test_partial_page_with_specific_page_size() {
 #[tokio::test]
 async fn test_specific_page() {
     let contracts = setup_ordered_contracts(150);
-    let result = crate::graphql::query::testable_query(&contracts, 
+    let result = crate::graphql::query::contracts_query_base(&contracts, 
         QueryParams { page: Some(3.0), ..Default::default() }).await;
     assert!(result.is_ok());
     let x = result.unwrap();

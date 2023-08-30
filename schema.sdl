@@ -8,18 +8,10 @@ input AccountOwnerFilter @oneOf {
 
 type Contract {
 	"""
-	WARNING: This information should not normally be queried as it is rather slow.
-	It can be used to validate the marlowe-rs contract simulation state-machine implementation
-	such that each redeemer is applied to the previous datum, validating the resulting output datum
-	which should always match the actual datum as seen on chain. If at any point these differ,
-	we know there is a bug in marlowe-rs. This property will return null if there are no issues detected.
-	Note that this is only for testing on PREPROD.
+	Describe the current contract state.
+	This will only provide very limited information regarding merkleized contracts.
 	"""
-	marloweRsTest: String!
-	"""
-	This property will provide a human readable description of the contracts current status.
-	"""
-	description: String!
+	describe: String
 	"""
 	true if the contract expects a notification to be made, and we can tell that
 	any notification sent at this time will cause the notification to be true.
@@ -58,12 +50,9 @@ type Contract {
 	"""
 	contractStateJson: String
 	hasTimedOut: Boolean!
-	continuations: JSONObject!
 	"""
 	Available only if the contract is in a state at which it may time out.
 	This will be a negative value if the contract has already timed out.
-	BUG: Generic(\"This contract is not fully initialized. There is an invalid case in a When contract.\"
-	BUG INFO: This happens when there are merkleized cases - bug created in marlowe-rs.
 	"""
 	nextTimeOut: Float
 	"""
@@ -122,31 +111,53 @@ type ContractEdge {
 }
 
 input ContractsFilter {
+	"""
+	The transaction hash and output index (hash#i) of the tx that created the contract
+	"""
 	id: StringFilter
 	"""
 	Custom cursor id used by marlowe-indexer, based on block,tx and utxo position on chain, converted to base58.
 	"""
 	shortId: StringFilter
-	hasIssues: Boolean
 	accountState: LockedAmountFilter
+	"""
+	The contract is fully closed: no further transitions are possible.
+	"""
 	isClosed: Boolean
-	meta: StringFilter
+	"""
+	Filter by meta data attached to any tx of a contract
+	"""
+	metaData: StringFilter
 	validatorHash: StringFilter
-	marloweRsStatus: StringFilter
 	"""
 	Filter by number of bound values in current state
 	"""
-	boundValues: NumFilter
-	datum: StringFilter
+	numberOfBoundValues: NumFilter
+	"""
+	NOTE: This filter is not yet implemented.
+	"""
+	usesMerkleization: Boolean
+	"""
+	NOTE: This filter is not yet implemented.
+	>> Find all contracts that this tx affected
+	"""
+	txId: StringFilter
+	"""
+	NOTE: This filter is not yet implemented.
+	"""
+	roleToken: [StringFilter!]
+	"""
+	NOTE: This filter is not yet implemented.
+	"""
+	rolePolicy: StringFilter
+	"""
+	NOTE: This filter is not yet implemented.
+	"""
+	participantAddress: [StringFilter!]
 }
 
 
 
-
-"""
-A scalar that can represent any JSON Object value.
-"""
-scalar JSONObject
 
 input LockedAmountFilter {
 	amount: NumFilter
@@ -167,7 +178,6 @@ type LockedAmountsResult {
 type MarloweTransition {
 	meta: String
 	datumJson: String
-	inputsJson: String
 	inputs: [String!]
 	txId: String!
 	utxoIndex: Float
@@ -175,10 +185,8 @@ type MarloweTransition {
 	slot: Float!
 	blockHash: String!
 	blockNum: Float!
-	invalid: Boolean!
-	issues: [String!]!
 	marloweScanStatus: String
-	lockedAmounts: [LockedAmountsResult!]
+	lockedFunds: [LockedAmountsResult!]
 }
 
 input NumFilter @oneOf {
@@ -239,6 +247,10 @@ input StringFilter @oneOf {
 }
 
 type SubscriptionRoot {
+	"""
+	Subscribe to events related to any contract or specific contracts using filters.
+	"""
+	contract: String!
 	indexerPerfStats: PerfStats!
 }
 
