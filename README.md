@@ -64,4 +64,12 @@ This is an experimental indexer for Marlowe contracts on the Cardano blockchain,
   - Filter contracts based on available withdrawals/payouts
 - Oracle helper subscriptions and API's
 
-TODO: Change how first/last works - shortId as bookmark ?
+---
+
+# Known issues & TODO's
+
+- Indexing of contracts using v3+ validator hits an issue where we panic due to missing redeemer
+- Resuming from db will some times skip a block (so far only observed after panic due to the above v3+ issue)
+- Pagination using the before & after props do not work correctly anymore
+- Tests need to be updated
+ 

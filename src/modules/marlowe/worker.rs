@@ -145,9 +145,15 @@ impl crate::modules::marlowe::MarloweSyncModule {
 
         let datums = transaction.plutus_data();  
 
+        // TODO : make configurable
+        // TODO : store the used hashes in .marlowe_db so that we enfore re-index
+        //        when these change
         let known_validator_hashes = [
             "6a9391d6aa51af28dd876ebb5565b69d1e83e5ac7861506bd29b56b0", 
-            "2ed2631dbb277c84334453c5c437b86325d371f0835a28b910a91a6e"
+            "2ed2631dbb277c84334453c5c437b86325d371f0835a28b910a91a6e",
+             //"d85fa9bc2bdfd97d5ebdbc5e3fc66f7476213c40c21b73b41257f09d",
+            // "6027a8010c555a4dd6b08882b899f4b3167c6e4524047132202dd984",
+            // "377325ad84a55ba0282d844dff2d5f0f18c33fd4a28a0a9d73c6f60d"
         ];
 
         // index_of_output_in_this_tx/output/txhash
@@ -211,7 +217,7 @@ impl crate::modules::marlowe::MarloweSyncModule {
             if redeemers.len() > 0 {
                 
                 let redeemer_plutus_data = &redeemers.iter().find(|r|r.index as usize == consumed.index_of_input)
-                    .expect("because this transaction consumes an utxo from the marlowe validator, there MUST be a redeemer here.").data;
+                    .expect(&format!("because this transaction consumes an utxo from the marlowe validator {}, there MUST be a redeemer here.",consumed.consumed_contract.validator_hash)).data;
 
                 let b = redeemer_plutus_data.encode_fragment().unwrap();
                 
@@ -428,7 +434,9 @@ impl crate::modules::marlowe::MarloweSyncModule {
 
 
             } else {
-                unreachable!("it should not be possible to consume a marlowe utxo without redeemer... {:?}--{}",&consumed.short_id,transaction.hash().to_string())
+    
+                unreachable!("it should not be possible to consume a marlowe utxo without redeemer but this contract '{:?}' was consumed by transaction {}. 
+                contract_id: {} - hash: {}",&consumed.short_id,transaction.hash().to_string(), consumed.consumed_contract.id, consumed.consumed_contract.validator_hash)
             }   
         }
 

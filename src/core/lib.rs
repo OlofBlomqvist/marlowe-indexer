@@ -154,7 +154,7 @@ impl CardanoChainSync {
     async fn connect(&mut self) -> Result<(),Report<ChainSyncError>> {
         
         
-        debug!("Connecting to {} (using magic: {})",&self.sync_state.configuration.address,&self.sync_state.configuration.magic);
+        debug!("Connecting to {} (using magic: {})--> {:?}.. intersect: {:?}",&self.sync_state.configuration.address,&self.sync_state.configuration.magic,&self.sync_state.current_block_number,&self.intersect);
 
         if self.client.is_some() {
             return Ok(())
