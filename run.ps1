@@ -1,1 +1,1 @@
-cargo run socket-sync --network=preprod
+cargo run -- socket-sync --network=preprod
