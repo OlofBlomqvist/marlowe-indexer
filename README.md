@@ -38,7 +38,6 @@ This is an experimental indexer for Marlowe contracts on the Cardano blockchain,
 
 ![graphql](https://github.com/OlofBlomqvist/marlowe_indexer/blob/main/graphql.png)
 
-
 ## Current features
 
 - Sync against cardano node over TCP/IP, UnixSocket or named pipes.
@@ -57,6 +56,7 @@ This is an experimental indexer for Marlowe contracts on the Cardano blockchain,
 *In no particular order*
 
 - Improve estimation sync
+- Improve query performance
 - Configuration via file
 - Persistance (redis,mongodb,file-system,etc?)
 - Indexing of addresses and their contents
