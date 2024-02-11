@@ -66,9 +66,10 @@ This is an experimental indexer for Marlowe contracts on the Cardano blockchain,
 
 ---
 
-## BRANCH SPECIFIC TEMP SECTION
+# Known issues & TODO's
 
-### REFACTORV2
-
-TODO: Fix test
-TODO: Change how first/last works - shortId as bookmark ?
+- Indexing of contracts using v3+ validator hits an issue where we panic due to missing redeemer
+- Resuming from db will some times skip a block (so far only observed after panic due to the above v3+ issue)
+- Pagination using the before & after props do not work correctly anymore
+- Tests need to be updated
+ 
