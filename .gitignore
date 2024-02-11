@@ -12,3 +12,7 @@ Cargo.lock
 
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
+
+**/.marlowe_db
+
+TODO.MD
