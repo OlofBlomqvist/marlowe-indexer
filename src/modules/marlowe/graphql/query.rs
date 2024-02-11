@@ -59,7 +59,8 @@ pub(crate) async fn contracts_query_base(magic:u64,marlowe_state: &std::sync::Ar
     let def_end = marlowe_state.contracts_count();
 
 
-
+    // TODO: should this actually be based on shortIds instead?
+    // TODO: get rid of unwrap here
     let start_pos = match params.after {
         Some(a) => {
             a.parse::<usize>().unwrap() + 1

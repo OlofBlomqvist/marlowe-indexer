@@ -8,7 +8,7 @@ use crate::modules::marlowe::graphql::types::{
 };
 
 #[cfg(test)]
-fn setup_ordered_contracts(contract_count:usize,test_name:&str) -> std::sync::Arc<crate::modules::marlowe::state::MarloweState> {
+async fn setup_ordered_contracts(contract_count:usize,test_name:&str) -> std::sync::Arc<crate::modules::marlowe::state::MarloweState> {
    
     let ids : Vec<usize> = (1..contract_count + 1).collect();
     let contracts : Vec<Contract> = ids.iter().map(|x| Contract {
@@ -18,13 +18,15 @@ fn setup_ordered_contracts(contract_count:usize,test_name:&str) -> std::sync::Ar
         validator_hash: "".into()
     }).collect();
 
-    std::sync::Arc::new(crate::modules::marlowe::state::MarloweState::new_mock(contracts,test_name))
+    let state = crate::modules::marlowe::state::MarloweState::new_mock(contracts,test_name);
+    state.init_mem_cache().await;
+    std::sync::Arc::new(state)
 }
 
 #[tokio::test]
 async fn test_valid_filter() {
     
-    let contracts = setup_ordered_contracts(50,"test_valid_filter");
+    let contracts = setup_ordered_contracts(50,"test_valid_filter").await;
     let filter = Some(ContractsFilter {
         ..Default::default()
     });
@@ -39,7 +41,7 @@ async fn test_valid_filter() {
 
 #[tokio::test]
 async fn test_pagination_after_and_first() {
-    let contracts = setup_ordered_contracts(55,"test_pagination_after_and_first");
+    let contracts = setup_ordered_contracts(55,"test_pagination_after_and_first").await;;
 
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts,QueryParams {
         after: Some("short_20".to_string()),
@@ -70,7 +72,7 @@ async fn test_pagination_after_and_first() {
 
 #[tokio::test]
 async fn test_pagination_before_and_last() {
-    let contracts = setup_ordered_contracts(55,"test_pagination_before_and_last");
+    let contracts = setup_ordered_contracts(55,"test_pagination_before_and_last").await;;
 
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts,QueryParams {
         before: Some("short_20".to_string()),
@@ -99,7 +101,7 @@ async fn test_pagination_before_and_last() {
 
 #[tokio::test]
 async fn test_filter_by_id() {
-    let contracts = setup_ordered_contracts(50,"test_filter_by_id");
+    let contracts = setup_ordered_contracts(50,"test_filter_by_id").await;;
     
     let filter = Some(ContractsFilter {
         id: Some(StringFilter::Eq("id_25".to_string())),
@@ -125,7 +127,7 @@ async fn test_filter_by_id() {
 
 #[tokio::test]
 async fn test_invalid_before_arg() {
-    let contracts = setup_ordered_contracts(50,"test_invalid_before_arg");
+    let contracts = setup_ordered_contracts(50,"test_invalid_before_arg").await;;
 
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts,QueryParams {
         before: Some("short_1000".to_string()),  // This does not exist
@@ -139,7 +141,7 @@ async fn test_invalid_before_arg() {
 
 #[tokio::test]
 async fn test_invalid_after_arg() {
-    let contracts = setup_ordered_contracts(50,"test_invalid_after_arg");
+    let contracts = setup_ordered_contracts(50,"test_invalid_after_arg").await;;
 
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts,QueryParams {
         after: Some("short_1000".to_string()),
@@ -152,7 +154,7 @@ async fn test_invalid_after_arg() {
 
 #[tokio::test]
 async fn test_no_results_filter() {
-    let contracts = setup_ordered_contracts(50,"test_no_results_filter");
+    let contracts = setup_ordered_contracts(50,"test_no_results_filter").await;;
     let filter = Some(ContractsFilter {
         id: Some(StringFilter::Eq("id_1000".to_string())),
         ..Default::default()
@@ -167,7 +169,7 @@ async fn test_no_results_filter() {
 
 #[tokio::test]
 async fn test_negative_first_value() {
-    let contracts = setup_ordered_contracts(50,"test_negative_first_value");
+    let contracts = setup_ordered_contracts(50,"test_negative_first_value").await;;
 
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, QueryParams { first: Some(-5), ..Default::default() }).await;
 
@@ -177,7 +179,7 @@ async fn test_negative_first_value() {
 
 #[tokio::test]
 async fn test_multiple_filters() {
-    let contracts = setup_ordered_contracts(50,"test_multiple_filters");
+    let contracts = setup_ordered_contracts(50,"test_multiple_filters").await;;
 
     let filter = Some(ContractsFilter {
         id: Some(StringFilter::Eq("id_25".to_string())),
@@ -193,7 +195,7 @@ async fn test_multiple_filters() {
 
 #[tokio::test]
 async fn test_max_results() {
-    let contracts = setup_ordered_contracts(50,"test_max_results");
+    let contracts = setup_ordered_contracts(50,"test_max_results").await;;
 
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, QueryParams { first: Some(100), ..Default::default() }).await;
 
@@ -203,7 +205,7 @@ async fn test_max_results() {
 
 #[tokio::test]
 async fn test_ordered_results() {
-    let contracts = setup_ordered_contracts(50,"test_ordered_results");
+    let contracts = setup_ordered_contracts(50,"test_ordered_results").await;;
 
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, QueryParams { ..Default::default() }).await;
 
@@ -219,7 +221,7 @@ async fn test_ordered_results() {
 
 #[tokio::test]
 async fn test_overlap_of_before_and_after() {
-    let contracts = setup_ordered_contracts(50,"test_overlap_of_before_and_after");
+    let contracts = setup_ordered_contracts(50,"test_overlap_of_before_and_after").await;;
 
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, 
         QueryParams {
@@ -237,7 +239,7 @@ async fn test_overlap_of_before_and_after() {
 
 #[tokio::test]
 async fn test_no_contracts() {
-    let contracts = setup_ordered_contracts(0,"test_no_contracts");
+    let contracts = setup_ordered_contracts(0,"test_no_contracts").await;;
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, 
         QueryParams { ..Default::default() }).await;
     match result {
@@ -248,7 +250,7 @@ async fn test_no_contracts() {
 
 #[tokio::test]
 async fn test_filter_non_existent_value() {
-    let contracts = setup_ordered_contracts(50,"test_filter_non_existent_value");
+    let contracts = setup_ordered_contracts(50,"test_filter_non_existent_value").await;;
     let filter = Some(ContractsFilter {
         id: Some(StringFilter::Eq("id_1000".to_string())),
         ..Default::default()
@@ -264,7 +266,7 @@ async fn test_filter_non_existent_value() {
 
 #[tokio::test]
 async fn test_multiple_different_filters() {
-    let contracts = setup_ordered_contracts(50,"test_multiple_different_filters");
+    let contracts = setup_ordered_contracts(50,"test_multiple_different_filters").await;;
     let filter = Some(ContractsFilter {
         id: Some(StringFilter::Eq("id_25".to_string())),
         short_id: Some(StringFilter::Eq("short_26".to_string())),
@@ -281,7 +283,7 @@ async fn test_multiple_different_filters() {
 
 #[tokio::test]
 async fn test_has_next_page_false_at_end() {
-    let contracts = setup_ordered_contracts(50,"test_has_next_page_false_at_end");
+    let contracts = setup_ordered_contracts(50,"test_has_next_page_false_at_end").await;;
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, 
         QueryParams {..Default::default() }).await;
     assert!(result.is_ok());
@@ -290,7 +292,7 @@ async fn test_has_next_page_false_at_end() {
 
 #[tokio::test]
 async fn test_has_previous_page_true() {
-    let contracts = setup_ordered_contracts(500,"test_has_previous_page_true");
+    let contracts = setup_ordered_contracts(500,"test_has_previous_page_true").await;;
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, 
         QueryParams { page:Some(4.0), ..Default::default() }).await;
     assert!(result.is_ok());
@@ -310,7 +312,7 @@ async fn test_has_previous_page_true() {
 
 #[tokio::test]
 async fn test_has_previous_page_false_at_start() {
-    let contracts = setup_ordered_contracts(50,"test_has_previous_page_false_at_start");
+    let contracts = setup_ordered_contracts(50,"test_has_previous_page_false_at_start").await;;
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, 
         QueryParams { first: Some(50), ..Default::default() }).await;
     assert!(result.is_ok());
@@ -320,7 +322,7 @@ async fn test_has_previous_page_false_at_start() {
 
 #[tokio::test]
 async fn test_invalid_combination_first_and_last() {
-    let contracts = setup_ordered_contracts(50,"test_invalid_combination_first_and_last");
+    let contracts = setup_ordered_contracts(50,"test_invalid_combination_first_and_last").await;;
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, 
         QueryParams { 
             first: Some(5), 
@@ -334,7 +336,7 @@ async fn test_invalid_combination_first_and_last() {
 #[tokio::test]
 async fn test_full_page() {
     
-    let contracts = setup_ordered_contracts(150,"test_full_page");
+    let contracts = setup_ordered_contracts(150,"test_full_page").await;;
 
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, 
         QueryParams { page: Some(2.0), ..Default::default() }).await;
@@ -359,7 +361,7 @@ async fn test_full_page() {
 
 #[tokio::test]
 async fn test_partial_page() {
-    let contracts = setup_ordered_contracts(55,"test_partial_page");
+    let contracts = setup_ordered_contracts(55,"test_partial_page").await;;
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, 
         QueryParams { page:Some(1.0), first: Some(55), ..Default::default() }).await;
     assert!(result.is_ok());
@@ -375,7 +377,7 @@ async fn test_partial_page() {
 
 #[tokio::test]
 async fn test_partial_page_using_latest() {
-    let contracts = setup_ordered_contracts(55,"test_partial_page_using_latest");
+    let contracts = setup_ordered_contracts(55,"test_partial_page_using_latest").await;;
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, 
         QueryParams { last: Some(55), ..Default::default() }).await;
     assert!(result.is_ok());
@@ -395,7 +397,7 @@ async fn test_partial_page_using_latest() {
 
 #[tokio::test]
 async fn test_partial_page_with_specific_page_size() {
-    let contracts = setup_ordered_contracts(55,"test_partial_page_with_specific_page_size");
+    let contracts = setup_ordered_contracts(55,"test_partial_page_with_specific_page_size").await;;
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, 
         QueryParams { first: Some(55), page_size: Some(55), ..Default::default() }).await;
     assert!(result.is_ok());
@@ -412,7 +414,7 @@ async fn test_partial_page_with_specific_page_size() {
 
 #[tokio::test]
 async fn test_specific_page() {
-    let contracts = setup_ordered_contracts(150,"test_specific_page");
+    let contracts = setup_ordered_contracts(150,"test_specific_page").await;;
     let result =  crate::modules::marlowe::graphql::query::contracts_query_base(42,&contracts, 
         QueryParams { page: Some(3.0), ..Default::default() }).await;
     assert!(result.is_ok());
