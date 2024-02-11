@@ -433,8 +433,6 @@ impl crate::modules::marlowe::MarloweSyncModule {
         }
 
 
-        // TODO ------------------- we dont seem to catch CLOSE... or specifically we only see ADD/INIT's.
-        
         if !out_to_marlowe.is_empty() || !consumed_from_marlowe_address.is_empty() {
             
             if !out_to_marlowe.is_empty() && consumed_from_marlowe_address.is_empty() {

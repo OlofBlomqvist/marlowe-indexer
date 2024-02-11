@@ -1,4 +1,4 @@
-use crate::modules::marlowe::graphql::types::*;
+use crate::modules::marlowe::{graphql::types::*, OutputReference};
 use crate::modules::marlowe::state::Contract;
 use crate::modules::marlowe::graphql::filters::*;
 
@@ -85,32 +85,87 @@ pub(crate) async fn contracts_query_base(magic:u64,marlowe_state: &std::sync::Ar
     let all_keys_ever : Vec<String> = marlowe_state.all_indexed_contract_ids().collect();
     let all_keys = all_keys_ever.get(start_pos..end_pos).unwrap();
     
-
+    // TODO: do we really need to keep this log anymore ?
     log.push(format!("Using range: {} to {}", start_pos, end_pos));
     
     //let contracts_in_order_guard = contracts.contracts_in_order.read().await;
     let total_indexed_contracts_len = marlowe_state.contracts_count(); //contracts_in_order_guard.len();
 
-    let sliced_contracts = &all_keys[start_pos..end_pos];
-    tracing::warn!("THERE BE THIS MANY TOTAL CONTRACTS: {}",total_indexed_contracts_len);
-    
-    tracing::warn!("THERE BE THIS MANY SLICED CONTRACTS: {}",sliced_contracts.len());
+    let mut sliced_contracts = &all_keys[start_pos..end_pos];
 
+    //tracing::trace!("THERE ARE THIS MANY TOTAL CONTRACTS: {}",total_indexed_contracts_len);
+    //tracing::trace!("THERE ARE THIS MANY SLICED CONTRACTS: {}",sliced_contracts.len());
+
+
+
+    let mut pre_filtered = vec![];
+    
     let mut x_filtered_items = vec![];
+
+    // PRE-FILTER FOR SHORT_ID FILTER
+    if let Some(filter) = &params.filter {
+        match &filter.short_id {
+            Some(
+                StringFilter::Eq(id)
+            ) =>  {
+                pre_filtered.push(id.to_owned());
+                sliced_contracts = &pre_filtered;
+            },
+            _ => {},
+        }
+    }
+
+    // PRE-FILTER FOR ID FILTER
+    if let Some(filter) = &params.filter {
+        match &filter.id {
+            Some(
+                StringFilter::Eq(id)
+            ) =>  {
+                let c = marlowe_state.get_by_long_id_from_mem_cache(id.into()).await;
+                if let Some(contract) = c {
+                    pre_filtered.push(contract.short_id.to_owned());
+                    sliced_contracts = &pre_filtered;
+                }
+
+            },
+            _ => {},
+        }
+    }
+    
+    
 
     for key in sliced_contracts.iter() {
         
-        //let x = contract.read().await;
-        // tracing::warn!("LOOKING FOR A CONTRACT: {}",key.clone());
-        let x = marlowe_state.get_by_shortid(key.clone()).unwrap(); 
+        let mut break_if_found = false;
+
+        if let Some(filter) = &params.filter {
+            match &filter.id {
+                Some(StringFilter::Eq(_)) => break_if_found = true,
+                _ => {}
+            }
+            match &filter.short_id {
+                Some(StringFilter::Eq(id)) if key != id => continue,
+                Some(StringFilter::Eq(id)) if key == id => {break_if_found=true},
+                Some(StringFilter::Neq(id)) if key == id => continue,
+                Some(StringFilter::Contains(id)) if !id.contains(id) => continue,
+                Some(StringFilter::NotContains(id)) if id.contains(id) => continue,                
+                _ => {},
+            }
+        }
+
+        //tracing::warn!("LOOKING FOR A CONTRACT: {}",key.clone());
+
+        
+        let x = marlowe_state.get_by_shortid_from_mem_cache(key.clone()).await.unwrap(); 
         //tracing::warn!("FOUND A CONTRACT: {}",x.short_id);
+
         if let Some(f) = &params.filter {
 
             // Filter by ID
             if !super::filters::str_check_opt(&f.id, &x.id) { continue };
 
-            // Filter by Short_Id
-            if !super::filters::str_check_opt(&f.short_id, &x.short_id) { continue };
+            // Filter by Short_Id - this is done earlier now
+            //if !super::filters::str_check_opt(&f.short_id, &x.short_id) { continue };
 
             // Filter by number of bounds
             if !super::filters::bound_values(&f.number_of_bound_values, &x) { continue };
@@ -157,6 +212,9 @@ pub(crate) async fn contracts_query_base(magic:u64,marlowe_state: &std::sync::Ar
             x_filtered_items.push(x);
         } else {
             x_filtered_items.push(x);
+            if break_if_found {
+                break
+            }
         }
     };
 

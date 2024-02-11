@@ -42,6 +42,7 @@ This is an experimental indexer for Marlowe contracts on the Cardano blockchain,
 
 - Sync against cardano node over TCP/IP, UnixSocket or named pipes.
 - Indexing of contracts using the V1 and V1+Audited Marlowe validators.
+- Persistance to disk
 - Basic GraphQL server exposing:
     - All indexed contracts
     - Marlowe State / datum (in json format)
@@ -56,9 +57,7 @@ This is an experimental indexer for Marlowe contracts on the Cardano blockchain,
 *In no particular order*
 
 - Improve estimation sync
-- Improve query performance
 - Configuration via file
-- Persistance (redis,mongodb,file-system,etc?)
 - Indexing of addresses and their contents
 - Improved subscriptions and filters such as
   - Filter contracts based on Open Role Tokens

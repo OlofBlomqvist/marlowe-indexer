@@ -107,6 +107,8 @@ async fn main() -> Result<()> {
     }).with(cors.clone());
     
     let marlowe_state = crate::modules::marlowe::state::MarloweState::new();
+    marlowe_state.init_mem_cache().await;
+
     let last_indexed_slot = marlowe_state.last_seen_slot_num();
     let last_indexed_block_hash = marlowe_state.last_seen_block_hash();
 

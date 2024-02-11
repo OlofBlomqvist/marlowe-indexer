@@ -167,6 +167,8 @@ pub struct MarloweState {
     
     contracts_db: sled::Tree,
 
+    contracts_mem_cache: RwLock<HashMap<String,Contract>>,
+    contracts_long_to_short_lookup : RwLock<HashMap<String,ContractShortId>>,
     out_ref_to_short_id_lookup: RwLock<HashMap<OutputReference,(SlotId,ContractShortId)>>,
 
     pub (crate) broadcast_tx: 
@@ -183,8 +185,6 @@ impl MarloweState {
     pub fn ivec_to_string(v:IVec) -> String {
         v.as_ascii().unwrap().as_str().to_owned()
     }
-
-
 
     pub async fn rollback(&self,slot_num: u64, block_hash:Option<String>) -> Result<(),sled::transaction::TransactionError<sled::transaction::TransactionError>> {
         
@@ -234,8 +234,8 @@ impl MarloweState {
 
         }).expect("rollbacks must always succeed");
 
-
-        
+        // re-initialize mem cache
+        self.init_mem_cache().await;
 
         self.set_last_seen_slot_num(slot_num);
         self.set_last_seen_block_hash(block_hash);
@@ -248,11 +248,22 @@ impl MarloweState {
     pub async fn contract_count(&self) -> usize {
         self.contracts_db.len()
     }
-
+    
     pub async fn insert(&self, contract: Contract) -> Option<IVec> {
-        
         let id = contract.short_id.clone();
+
+        {
+            let mut lookup_guard = self.contracts_long_to_short_lookup.write().await;
+            let mut guard = self.contracts_mem_cache.write().await;
+            guard.entry(id.clone()).or_insert(contract.clone());
+            let short_id = contract.short_id.to_owned();
+            let id = contract.id.to_owned();
+            lookup_guard.insert(id,short_id);
+    
+        }
+
         let pd = contract.to_plutus_data(&vec![]).expect("to_plutus_data should always work");
+        
         let serialized = marlowe_lang::plutus_data::to_bytes(&pd).expect("should always be possible to serialize contracts");
         self.contracts_db.insert(id.clone(),serialized).unwrap()
     }
@@ -319,6 +330,8 @@ impl MarloweState {
         }
 
         MarloweState {
+            contracts_long_to_short_lookup: RwLock::new(HashMap::new()),
+            contracts_mem_cache: RwLock::new(HashMap::new()),
             state_db: db_state,
             contracts_db: contracts_tree,
             out_ref_to_short_id_lookup: RwLock::new(HashMap::new()),
@@ -330,12 +343,39 @@ impl MarloweState {
         let db = sled::open(".marlowe_db").expect("Database initialization failed");
         let db_state = db.open_tree("state").unwrap();
         let contracts_tree = db.open_tree("contracts").unwrap();
-        MarloweState {
+    
+        let state = MarloweState {
+            contracts_long_to_short_lookup: RwLock::new(HashMap::new()),
+            contracts_mem_cache: RwLock::new(HashMap::new()),
             state_db: db_state,
             contracts_db: contracts_tree,
             out_ref_to_short_id_lookup: RwLock::new(HashMap::new()),
             broadcast_tx: tokio::sync::broadcast::channel(1000)
+        };
+
+        state
+    }
+
+    // Populate mem cache from db
+    pub async fn init_mem_cache(&self) {
+        tracing::info!("INITIALIZING MEM CACHE FROM DB");
+        let mut contracts = vec![];
+        for short_id in self.all_indexed_contract_ids() {
+            let c = self.get_by_shortid_from_db(short_id.clone()).await.expect(&format!("db contains corrupt data - failed to deserialize contract: {short_id}"));
+            contracts.push(c);
         }
+        let mut lookup_guard = self.contracts_long_to_short_lookup.write().await;
+        let mut guard = self.contracts_mem_cache.write().await;
+        guard.clear();
+        lookup_guard.clear();
+        for c in contracts {
+            let short_id = c.short_id.to_owned();
+            let id = c.id.to_owned();
+            guard.insert(short_id.clone(), c);
+            lookup_guard.insert(id,short_id);
+
+        }
+        tracing::info!("MEM CACHE INITIALIZED!");
     }
 
     // contracts that have not ended (ie. contracts that live on the validator address) can be found by the out_ref
@@ -348,16 +388,28 @@ impl MarloweState {
         )
     }
 
-    pub fn get_by_shortid(&self,short_id:ContractShortId) -> Option<Contract> {
-        if self.contracts_db.contains_key(short_id.clone()).unwrap() {
-            let data = self.contracts_db.get(short_id).unwrap().unwrap();
-            Some(marlowe_lang::plutus_data::from_bytes_specific(&data).unwrap())
-        } else {
-            None
+
+    pub async fn get_by_long_id_from_mem_cache(&self,long_id:String) -> Option<Contract> {
+        let read_guard = self.contracts_long_to_short_lookup.read().await;
+        match read_guard.get(&long_id) {
+            Some(x) => self.get_by_shortid_from_mem_cache(x.into()).await,
+            None => None,
         }
     }
 
-    
+    pub async fn get_by_shortid_from_mem_cache(&self,short_id:ContractShortId) -> Option<Contract> {
+        let read_guard = self.contracts_mem_cache.read().await;
+        if let Some(c) = read_guard.get(&short_id) { Some(c.clone()) } else { None }
+    }
+
+    pub async fn get_by_shortid_from_db(&self,short_id:ContractShortId) -> Option<Contract> {
+        match self.contracts_db.get(short_id) {
+            Ok(Some(data)) => {
+                Some(marlowe_lang::plutus_data::from_bytes_specific(&data).unwrap())
+            },
+            _ => None,
+        }       
+    }
 
     pub async fn apply_internal(&self,event:MarloweEvent) {
 

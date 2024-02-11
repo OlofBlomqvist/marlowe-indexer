@@ -110,7 +110,7 @@ impl MarloweSubscriptionRoot {
             
             loop {
                 
-                let possibly_contract = my_context.get_by_shortid(short_id.clone());
+                let possibly_contract = my_context.get_by_shortid_from_mem_cache(short_id.clone()).await;
 
                 if let Some(c) = possibly_contract {        
                     yield Some(c.clone());
