@@ -64,11 +64,4 @@ This is an experimental indexer for Marlowe contracts on the Cardano blockchain,
   - Filter contracts based on available withdrawals/payouts
 - Oracle helper subscriptions and API's
 
----
-
-## BRANCH SPECIFIC TEMP SECTION
-
-### REFACTORV2
-
-TODO: Fix test
 TODO: Change how first/last works - shortId as bookmark ?
