@@ -227,7 +227,9 @@ impl MarloweSyncWorker {
                 
             }
 
-            if let Some(redeemers) = transaction.redeemers() {
+            let redeemers = transaction.redeemers();
+
+            if redeemers.len() > 0 {
                 
                 let redeemer_plutus_data = &redeemers.iter().find(|r|r.index as usize ==index_of_input_in_this_tx)
                     .expect("because this transaction consumes an utxo from the marlowe validator, there MUST be a redeemer here.").data;
@@ -292,7 +294,7 @@ impl MarloweSyncWorker {
                 // in case of a tx closing the contract, there does not need to be a datum
                 let (datum_hash, datum,utxo_id,_original_datum_bytes) = 
                     if let Some(o) = out_to_marlowe.first() { 
-                        let rr = read_marlowe_info_from_utxo(&o.1,&datums) ;
+                        let rr = read_marlowe_info_from_utxo(&o.1,datums) ;
                         match rr {
                             Ok(d) => {
                                 match d {
@@ -456,7 +458,7 @@ impl MarloweSyncWorker {
 
                 let tx_datums = transaction.plutus_data();
 
-                for d in &tx_datums {
+                for d in tx_datums {
                     datums.insert(
                         d.original_hash(),
                         d.raw_cbor()
@@ -637,7 +639,7 @@ pub enum MarloweDatumRes {
     Raw(String,marlowe_lang::types::marlowe::MarloweDatum,Vec<u8>)
 }
 
-fn read_marlowe_info_from_utxo(o:&MultiEraOutput,datums:&[&pallas::codec::utils::KeepRaw<'_, pallas_primitives::babbage::PlutusData>]) -> Result<MarloweDatumRes,String> {
+fn read_marlowe_info_from_utxo(o:&MultiEraOutput,datums:&[pallas::codec::utils::KeepRaw<'_, pallas_primitives::babbage::PlutusData>]) -> Result<MarloweDatumRes,String> {
     match o.datum() {
         Some(x) => {
             match x {

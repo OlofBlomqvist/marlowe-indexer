@@ -10,10 +10,11 @@ async-trait = "0.1.68"
 bytes = "1.4.0"
 error-stack = {version="0.4.0", features=["std","anyhow","hooks"]}
 hex = "0.4.3"
-pallas = "0.18.1"
-pallas-primitives = "0.18.1"
-pallas-traverse = "0.18.1"
-pallas_network = { git = "https://github.com/OlofBlomqvist/pallas", branch="feat-win-pipes", package="pallas-network" }
+pallas = "0.22.0"
+pallas-primitives = "0.22.0"
+pallas-traverse = "0.22.0"
+pallas-network ={ version="0.22.0"}
+#pallas_network = { git = "https://github.com/OlofBlomqvist/pallas", branch="feat-win-pipes", package="pallas-network" }
 #pallas-network = { path = "C:/Users/oblink/Documents/GitHub/pallas/pallas-network" }
 #pallas_network = { git = "https://github.com/txpipe/pallas.git", branch = "main", package = "pallas-network" }
 

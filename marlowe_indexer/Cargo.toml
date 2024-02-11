@@ -10,9 +10,9 @@ cardano_chain_sync = { path = "../cardano_chain_sync" }
 tokio = { version ="1.28.0", features = ["full"] }
 anyhow = { version ="1.0.71" }
 error-stack = {version="0.4.0", features=["std","anyhow","hooks"]}
-pallas = "0.18.1"
-pallas-primitives = "0.18.1"
-pallas-traverse = "0.18.1"
+pallas = "0.22.0"
+pallas-primitives = "0.22.0"
+pallas-traverse = "0.22.0"
 pallas-crypto = "*"
 #pallas-network = { path = "C:/Users/oblink/Documents/GitHub/pallas/pallas-network" }
 #pallas_network = { git = "https://github.com/OlofBlomqvist/pallas", branch="feat-win-pipes", package="pallas-network" }
@@ -23,18 +23,18 @@ tonic = "*"
 #marlowe_lang = { path = "../../marlowe_rust",features=["unstable","utils"] }
 marlowe_lang = { git = "https://github.com/OlofBlomqvist/marlowe_lang",features=["unstable","utils"] }
 hex = "0.4.3"
-async-graphql = "6.0.4"
-async-graphql-warp = "6.0.4"
+async-graphql = "7.0.1"
+async-graphql-warp = "7.0.1"
 async-trait = "0.1.68"
 serde_json = "1.0.96"
-env_logger = "0.10.0"
+env_logger = "0.11.1"
 bs58 = "*"
 ctrlc = "3.1"
 reqwest = "*"
 crossterm = "*"
 clap = "4.3.21"
 structopt = "0.3.26"
-strum_macros = "0.25.2"
+strum_macros = "0.26.1"
 futures-timer = "3.0.2"
 serde = "1.0.183"
 
