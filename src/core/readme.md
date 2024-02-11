@@ -1,1 +1,0 @@
-Everything needed for communicating with cardano-node exists in the core section

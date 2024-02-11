@@ -83,36 +83,34 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'cardano_chain_sync_graphql'",
+            "name": "Debug executable 'marlowe_indexer'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=cardano_chain_sync_graphql",
-                    "--package=cardano_chain_sync_graphql"
+                    "--bin=marlowe_indexer",
+                    "--package=marlowe_indexer"
                 ],
                 "filter": {
-                    "name": "cardano_chain_sync_graphql",
+                    "name": "marlowe_indexer",
                     "kind": "bin"
                 }
             },
-            "args": [
-                "-f","socket-sync" ,"--network=preprod"
-            ],
+            "args": [],
             "cwd": "${workspaceFolder}"
         },
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'cardano_chain_sync_graphql'",
+            "name": "Debug unit tests in executable 'marlowe_indexer'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=cardano_chain_sync_graphql",
-                    "--package=cardano_chain_sync_graphql"
+                    "--bin=marlowe_indexer",
+                    "--package=marlowe_indexer"
                 ],
                 "filter": {
-                    "name": "cardano_chain_sync_graphql",
+                    "name": "marlowe_indexer",
                     "kind": "bin"
                 }
             },

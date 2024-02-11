@@ -1,25 +1,38 @@
 ![CI Build](https://github.com/olofblomqvist/marlowe-indexer/actions/workflows/rust.yml/badge.svg?branch=main)
 
-⚠️ **This project is highly unstable and not recommended for use in production systems.**
+# Marlowe Sync (indexer)
 
-# Marlowe Indexer (WIP)
+An indexer for Marlowe smart contracts on the Cardano blockchain.
+Exposes indexed data via graphql.
 
-This is an experimental indexer for Marlowe contracts on the Cardano blockchain, based on the Haskell implementation by IOG [here](https://github.com/input-output-hk/marlowe-cardano/).
+Current state of this repository: Early alpha/poc phase
 
-### How it works
+**NOT YET READY FOR PRODUCTION USE**
+
+# What works?
+
+- Sync against cardano node over TCP/IP, UnixSocket or named pipes.
+- Indexing of contracts using the V1 and V1+Audited Marlowe validators.
+- Basic GraphQL server exposing:
+    - All indexed contracts
+    - Marlowe State / datum (in json format)
+    - Marlowe Redeemer, also in json format
+    - Generic info about each tx involved in a contract
+    - Limited filtering
+    - Pagination
+
+# How it works
 
 - Communicates via Cardano Nodes using [Pallas](https://github.com/txpipe/pallas) by the [txpipe](https://github.com/txpipe) team.
 - Decoding of Marlowe on-chain data via [Marlowe_Lang](https://github.com/OlofBlomqvist/marlowe_lang).
 - GraphQL server using [Async-GraphQL](https://github.com/async-graphql/async-graphql) & [Warp](https://github.com/seanmonstar/warp)
 
-### How to run?
-
-*Pre-built binaries will be provided at a later date.*
+# How to run?
 
 1. Make sure you have Rust installed: https://www.rust-lang.org/tools/install
 2. Clone the repository
 3. Run the application using one of the following ways: 
-    ```bash
+    ```powershell
     
     # Connect to a local node (defaults to CARDANO_NODE_SOCKET_PATH)
     cargo run socket-sync --network=preprod
@@ -38,29 +51,17 @@ This is an experimental indexer for Marlowe contracts on the Cardano blockchain,
 
 ![graphql](https://github.com/OlofBlomqvist/marlowe_indexer/blob/main/graphql.png)
 
-
-## Current features
-
-- Sync against cardano node over TCP/IP, UnixSocket or named pipes.
-- Indexing of contracts using the V1 and V1+Audited Marlowe validators.
-- Basic GraphQL server exposing:
-    - All indexed contracts
-    - Marlowe State / datum (in json format)
-    - Marlowe Redeemer, also in json format
-    - Generic info about each tx involved in a contract
-    - Limited filtering
-    - Pagination
-    - Subscription for contract events
-
-### Planned features
+# Planned features
 
 *In no particular order*
 
-- Improve estimation sync
 - Configuration via file
-- Persistance (redis,mongodb,file-system,etc?)
-- Indexing of addresses and their contents
-- Improved subscriptions and filters such as
-  - Filter contracts based on Open Role Tokens
-  - Filter contracts based on available withdrawals/payouts
-- Oracle helper subscriptions and API's
+- Customization of how to store marlowe data: JSON/CBOR etc
+- Data Persistance (redis,mongodb,file-system,etc?)
+- GraphQL subscriptions (with filtering)
+- Stabilize structure of stored data (what to store about each contract and how)
+
+# Code quality
+
+- Initially during POC, shortcuts will be taken..
+- Will be improved greatly before V1 release.
