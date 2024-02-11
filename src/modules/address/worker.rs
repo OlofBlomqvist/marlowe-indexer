@@ -1,3 +1,7 @@
+use pallas::codec::{minicbor::Decode, utils::KeyValuePairs};
+use pallas_primitives::conway::AssetName;
+use warp::filters::trace::named;
+
 use crate::core::lib::ChainSyncReceiver;
 use super::{AddressModule, graphql::query::UtxoInfo};
 
@@ -22,23 +26,17 @@ impl ChainSyncReceiver for AddressModule {
  
                         let mut assets = std::collections::HashMap::new();
 
+                        
                         for a in output.non_ada_assets() {
-                            match a {
-                                pallas_traverse::Asset::Ada(_) => unreachable!(),
-                                pallas_traverse::Asset::NativeAsset(_, _, amount) => {
-                                    if let Some(ascii_name) = a.ascii_name() {
-                                        let pol = a.policy_hex().expect("we know this is a native asset so it must have a policy");
-                                        let id = format!("{pol}.{ascii_name}");
-                                        if ascii_name != "" {
-                                            assets.insert(id,amount.to_string());
-                                        } else {
-                                            assets.insert(a.subject(),amount.to_string());
-                                        }
-                                        
-                                    } else {
-                                        assets.insert(a.subject(),amount.to_string());
-                                    }
-                                },
+                            for output in a.assets() {
+                               let name = if let Some(name) = output.to_ascii_name() {
+                                    name
+                               } else {
+                                    tracing::warn!("failed to read name of asset: {a:?}");
+                                    "unknown".into()
+                               };
+                               let amount = output.any_coin().to_string();
+                               assets.insert(name, amount);
                             }
                         }
 

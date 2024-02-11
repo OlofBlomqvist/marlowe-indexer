@@ -1,4 +1,4 @@
-use opentelemetry::sdk::{Resource, trace::XrayIdGenerator};
+use opentelemetry_sdk::{Resource, trace::XrayIdGenerator};
 use tracing::Level;
 use tracing_subscriber::{FmtSubscriber, fmt::{format::FmtSpan, self}, filter::LevelFilter};
 
@@ -76,12 +76,12 @@ pub async fn init(level:Level,mut otel_tracing_endpoint:Option<String>) -> anyho
         let tracer = opentelemetry_otlp::new_pipeline()
             .tracing()
             .with_trace_config(
-                opentelemetry::sdk::trace::Config::default()
-                    .with_sampler(opentelemetry::sdk::trace::Sampler::AlwaysOn)
+                opentelemetry_sdk::trace::Config::default()
+                    .with_sampler(opentelemetry_sdk::trace::Sampler::AlwaysOn)
                     .with_resource(resource).with_id_generator(XrayIdGenerator::default())
             )
-            .with_exporter(exporter).with_batch_config(opentelemetry::sdk::trace::BatchConfig::default())
-            .install_batch(opentelemetry::sdk::runtime::Tokio)
+            .with_exporter(exporter).with_batch_config(opentelemetry_sdk::trace::BatchConfig::default())
+            .install_batch(opentelemetry_sdk::runtime::Tokio)
             .unwrap();
 
         let otel_layer = 
