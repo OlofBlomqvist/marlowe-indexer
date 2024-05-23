@@ -90,21 +90,27 @@ async fn main() -> Result<()> {
         .allow_methods(vec!["POST", "GET", "OPTIONS"]) 
         .allow_headers(vec!["Content-Type","origin"]); 
 
-    let graphiql = warp::path::end()
-        .and(warp::get())
-        // we dont want to match websocket connections
-        .and(warp::header::optional("Upgrade").and_then(async move |h:Option<String>|{
+        let reject_websocket = warp::header::optional("Upgrade")
+        .and_then(|h: Option<String>| async move {
             if h.is_some() {
                 Err(warp::reject())
             } else {
                 Ok(())
             }
-        }).boxed())
-        .map(|_| {
-        HttpResponse::builder()
-            .header("content-type", "text/html")
-            .body(GraphiQLSource::build().endpoint("/").subscription_endpoint("/").finish())
-    }).with(cors.clone());
+        })
+        .untuple_one()
+        .boxed();
+    
+    let graphiql = warp::path::end()
+        .and(warp::get())
+        .and(reject_websocket.clone()) 
+        .map(|| {
+            HttpResponse::builder()
+                .header("content-type", "text/html")
+                .body(GraphiQLSource::build().endpoint("/").subscription_endpoint("/").finish())
+        })
+        .with(cors.clone());
+    
     
     let marlowe_state = crate::modules::marlowe::state::MarloweState::new();
     marlowe_state.init_mem_cache().await;
