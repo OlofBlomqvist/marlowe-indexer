@@ -151,9 +151,9 @@ impl crate::modules::marlowe::MarloweSyncModule {
         let known_validator_hashes = [
             "6a9391d6aa51af28dd876ebb5565b69d1e83e5ac7861506bd29b56b0", 
             "2ed2631dbb277c84334453c5c437b86325d371f0835a28b910a91a6e",
-             //"d85fa9bc2bdfd97d5ebdbc5e3fc66f7476213c40c21b73b41257f09d",
-            // "6027a8010c555a4dd6b08882b899f4b3167c6e4524047132202dd984",
-            // "377325ad84a55ba0282d844dff2d5f0f18c33fd4a28a0a9d73c6f60d"
+            "d85fa9bc2bdfd97d5ebdbc5e3fc66f7476213c40c21b73b41257f09d",
+            "6027a8010c555a4dd6b08882b899f4b3167c6e4524047132202dd984",
+            "377325ad84a55ba0282d844dff2d5f0f18c33fd4a28a0a9d73c6f60d"
         ];
 
         // index_of_output_in_this_tx/output/txhash

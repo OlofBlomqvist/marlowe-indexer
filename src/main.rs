@@ -99,7 +99,7 @@ async fn main() -> Result<()> {
             } else {
                 Ok(())
             }
-        }))
+        }).boxed())
         .map(|_| {
         HttpResponse::builder()
             .header("content-type", "text/html")
