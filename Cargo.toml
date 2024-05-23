@@ -56,6 +56,8 @@ futures = "0.3.28"
 bytes = "1.5.0"
 chrono = "0.4.31"
 rand = "0.8.5"
+utoipa = "4.2.0"
+utoipa-swagger-ui = "6.0.0"
 
 [features]
 debug = []

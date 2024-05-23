@@ -4,7 +4,6 @@ use crate::core::lib::slot_to_posix_time_with_specific_magic;
 use marlowe_lang::semantics::{ContractSemantics, MachineState};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tracing::info;
-
 pub mod state;
 pub mod worker;
 pub mod graphql;

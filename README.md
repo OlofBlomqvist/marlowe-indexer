@@ -22,16 +22,16 @@ This is an experimental indexer for Marlowe contracts on the Cardano blockchain,
     ```bash
     
     # Connect to a local node (defaults to CARDANO_NODE_SOCKET_PATH)
-    cargo run socket-sync --network=preprod
+    cargo run -- socket-sync --network=preprod
 
     # Connect to a local node with specified path
-    cargo run socket-sync --network=preprod -- "\\.\pipe\cardano-node-preprod"
+    cargo run -- socket-sync --network=preprod -- "\\.\pipe\cardano-node-preprod"
 
     # Connect to a random remote node
-    cargo run tcp-sync --network=preprod
+    cargo run -- tcp-sync --network=preprod
 
     # Connect to a specific remote node
-    cargo run tcp-sync --network=preprod -- 192.168.1.122:3000
+    cargo run -- tcp-sync --network=preprod -- 192.168.1.122:3000
 
     ```
 4. Open localhost:8000 in a browser

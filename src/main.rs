@@ -172,29 +172,35 @@ async fn main() -> Result<()> {
         runtime.block_on(ccs.run())
     });       
     
-    
     // Enable all modules to be reached thru their own gql filters
-    let routes =              
-            graphiql.or(filters)
-            .recover(|err: Rejection| async move {
-                if let Some(GraphQLBadRequest(err)) = err.find() {
-                    return Ok::<_, std::convert::Infallible>(warp::reply::with_status(
-                        err.to_string(),
-                        warp::hyper::StatusCode::BAD_REQUEST,
-                    ));
-                }
-                tracing::warn!("Invalid Request: {:?}",err);
-                Ok(warp::reply::with_status(
-                    "INTERNAL_SERVER_ERROR".to_string(),
-                    warp::hyper::StatusCode::INTERNAL_SERVER_ERROR,
-                ))
-            });
+
+    //let rest_api_routes = crate::modules::marlowe::restapi::routes(global_state_arc.clone());
+
+    // Combine the routes, REST API routes first
+    let routes = 
+        //rest_api_routes
+        graphiql .or(filters)
+        
+        .recover(|err: Rejection| async move {
+            if let Some(GraphQLBadRequest(err)) = err.find() {
+                return Ok::<_, std::convert::Infallible>(warp::reply::with_status(
+                    err.to_string(),
+                    warp::hyper::StatusCode::BAD_REQUEST,
+                ));
+            }
+            tracing::warn!("Invalid Request: {:?}", err);
+            Ok(warp::reply::with_status(
+                "INTERNAL_SERVER_ERROR".to_string(),
+                warp::hyper::StatusCode::INTERNAL_SERVER_ERROR,
+            ))
+        });
 
 
-    tokio::spawn(warp::serve(routes).run(([0, 0, 0, 0], opt.graphql_listen_port)));
+    tokio::spawn(
+        warp::serve(routes)
+        .run(([0, 0, 0, 0], opt.graphql_listen_port)));
     
     worker_handle.join().expect("Couldn't join on the associated thread");
-    
 
     tracing::info!("Application stopping gracefully.");
     
@@ -236,8 +242,8 @@ async fn resolve_addr(network_name:&NetworkArg) -> anyhow::Result<String> {
    
     let decoded_data : TopologyData = serde_json::de::from_str(&body)?;
     
-    if let Some(p) = decoded_data.producers.first() {
-        Ok(format!("{}:{}",p.addr,p.port))
+    if let Some(p) = decoded_data.bootstrap_peers.first() {
+        Ok(format!("{}:{}",p.address,p.port))
     } else {
         Err(anyhow::Error::msg(format!("Found no producers in the response from {url}")))
     }

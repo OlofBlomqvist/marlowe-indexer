@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use crossterm::terminal;
 use marlowe_lang::plutus_data;
 use marlowe_lang::plutus_data::{ToPlutusDataDerive, FromPlutusDataDerive};
+use serde::Deserialize;
 use sled::IVec;
 use tokio::sync::RwLock;
 use tracing::debug;
@@ -46,7 +47,7 @@ impl Contract {
     }
 }
 
-#[derive(Clone,Debug,ToPlutusDataDerive,FromPlutusDataDerive)]
+#[derive(Clone,Debug,ToPlutusDataDerive,FromPlutusDataDerive,Deserialize)]
 pub struct GraphQLHackForu64 {
     data : String
 }
