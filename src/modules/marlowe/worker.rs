@@ -216,8 +216,8 @@ impl crate::modules::marlowe::MarloweSyncModule {
             let redeemers = transaction.redeemers();
             if redeemers.len() > 0 {
                 
-                let redeemer_plutus_data = &redeemers.iter().find(|r|r.index as usize == consumed.index_of_input)
-                    .expect(&format!("because this transaction consumes an utxo from the marlowe validator {}, there MUST be a redeemer here.",consumed.consumed_contract.validator_hash)).data;
+                let redeemer_plutus_data = &redeemers.iter().find(|r|r.index() as usize == consumed.index_of_input)
+                    .expect(&format!("because this transaction consumes an utxo from the marlowe validator {}, there MUST be a redeemer here.",consumed.consumed_contract.validator_hash)).data();
 
                 let b = redeemer_plutus_data.encode_fragment().unwrap();
                 
